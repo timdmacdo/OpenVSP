@@ -26,7 +26,7 @@ void vsp_exit()
     exit( 0 );
 }
 
-bool run_tests()
+/*bool run_tests()
 {
     // Add desired suites to parent suite
     Test::Suite ts;
@@ -40,7 +40,7 @@ bool run_tests()
 
     // Run the test and return success or failure
     return ts.run(output, cont_after_fail) ? EXIT_SUCCESS : EXIT_FAILURE;
-}
+}*/
 
 //========================================================//
 //========================================================//
@@ -48,7 +48,7 @@ bool run_tests()
 int main( int argc, char** argv )
 {
 //==== Use CPPTest =====//
-    run_tests();
+    //run_tests();
     printf("\n\n");
 
 //==== Use Case 1 ====//
