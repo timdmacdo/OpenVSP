@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <string>
+#include <stdlib.h>
 
 #include "Shader.h"
 
@@ -166,7 +167,7 @@ void Shader::_create( const char * vShaderSrc, const char * fShaderSrc )
     glGetShaderiv( this->_vShaderId, GL_COMPILE_STATUS, &compileOK );
     if( !compileOK )
     {
-		glGetShaderiv( this->_vShaderId, GL_INFO_LOG_LENGTH, &logLength );
+        glGetShaderiv( this->_vShaderId, GL_INFO_LOG_LENGTH, &logLength );
         errorMsg = ( char * )malloc( logLength );
         glGetShaderInfoLog( this->_vShaderId, logLength, &tempHolder, errorMsg );
         std::printf( "\nVertex Shader Compile Error: \n %s", errorMsg );

@@ -6,7 +6,6 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-
 #include <FL/Fl.H>
 #include "viewerUI.h"
 
@@ -94,7 +93,7 @@ int main(int argc, char **argv) {
 
     if ( ForceView ) vui->glviewer->FixViewBox(BoxSize);
 
-    // Set a time stamp lable
+    // Set a time stamp label
 
     if ( TimeStamp ) vui->glviewer->SetTimeStampLabel(TimeLabel);
 
