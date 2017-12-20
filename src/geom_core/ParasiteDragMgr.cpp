@@ -140,9 +140,9 @@ void ParasiteDragMgrSingleton::SetDefaultStruct()
     m_DefaultStruct.Swet = -1;
     m_DefaultStruct.Lref = -1;
     m_DefaultStruct.Re = -1;
-    m_DefaultStruct.Roughness = -1;
-    m_DefaultStruct.TeTwRatio = -1;
-    m_DefaultStruct.TawTwRatio = -1;
+    m_DefaultStruct.Roughness = 0.0;
+    m_DefaultStruct.TeTwRatio = 1;
+    m_DefaultStruct.TawTwRatio = 1;
     m_DefaultStruct.PercLam = 0.0;
     m_DefaultStruct.Cf = -1;
     m_DefaultStruct.fineRat = -1;
@@ -469,7 +469,7 @@ void ParasiteDragMgrSingleton::Calculate_Swet()
                     vector < string > tagnamevec = m_CompGeomResults->Find( "Tag_Name" ).GetStringData();
                     if ( m_geo_subsurfID[i].compare( "" ) == 0 )
                     {
-                        sprintf( str, "%s%i", geom->GetName().c_str(), m_geo_surfNum[i] );
+                        sprintf( str, "%s_Surf%i", geom->GetName().c_str(), m_geo_surfNum[i] );
                         newstr = str;
                         searchIndex = vector_find_val( tagnamevec, newstr );
                         m_geo_swet.push_back( m_CompGeomResults->Find( "Tag_Wet_Area" ).GetDouble( searchIndex ) );
@@ -477,7 +477,7 @@ void ParasiteDragMgrSingleton::Calculate_Swet()
                     }
                     else
                     {
-                        sprintf( str, "%s%i,%s", geom->GetName().c_str(), m_geo_surfNum[i],
+                        sprintf( str, "%s_Surf%i,%s", geom->GetName().c_str(), m_geo_surfNum[i],
                              geom->GetSubSurf( m_geo_subsurfID[i] )->GetName().c_str() );
                         newstr = str;
                         searchIndex = vector_find_val( tagnamevec, newstr );
@@ -738,17 +738,9 @@ void ParasiteDragMgrSingleton::Calculate_Cf()
                 lref = ConvertLength( m_geo_lref[i], m_LengthUnit(), vsp::LEN_M );
                 kineVisc = m_Atmos.GetDynaVisc() / rho;
 
-                if ( m_geo_percLam[i] == 0 || m_geo_percLam[i] == -1 )
-                {
-                    // Assume full turbulence
-                    m_geo_cf.push_back( CalcTurbCf( m_geo_Re[i], m_geo_lref[i], m_TurbCfEqnType(),
-                                                  m_SpecificHeatRatio(), m_geo_Roughness[i], m_geo_TawTwRatio[i], m_geo_TeTwRatio[i] ) );
-                }
-                else
-                {
-                    // Not full turbulence
-                    CalcPartialTurbulence( i, lref, vinf, kineVisc );
-                }
+                // Will calculate full turbulence
+                m_geo_cf.push_back( CalcPartialTurbulence( m_geo_percLam[i], m_geo_Re[i], m_geo_lref[i], m_ReqL(),
+                   m_geo_Roughness[i], m_geo_TawTwRatio[i], m_geo_TeTwRatio[i] ) );
             }
             else
             {
@@ -763,34 +755,30 @@ void ParasiteDragMgrSingleton::Calculate_Cf()
     }
 }
 
-void ParasiteDragMgrSingleton::CalcPartialTurbulence( int i, double lref, double vinf, double kineVisc )
+double ParasiteDragMgrSingleton::CalcPartialTurbulence( double perclam, double re, double lref, double reqL,
+    double roughness, double tawtwrat, double tetwrat )
 {
-    if ( m_geo_Re[i] != 0 )
+    double cf = 0;
+    if ( re > 0 )
     {
         // Prevent dividing by 0 in some equations
-        double LamPerc = ( m_geo_percLam[i] / 100 );
-        double CffullTurb = CalcTurbCf( m_geo_Re[i], m_geo_lref[i], m_TurbCfEqnType(),
-                                        m_SpecificHeatRatio(), m_geo_Roughness[i], m_geo_TawTwRatio[i], m_geo_TeTwRatio[i] );
-        double CffullLam = CalcLamCf( m_geo_Re[i], m_LamCfEqnType.Get() );
+        double LamPerc = ( perclam / 100 );
+        double CffullTurb = CalcTurbCf( re, lref, m_TurbCfEqnType(), m_SpecificHeatRatio(), roughness, tawtwrat, tetwrat );
+        double CffullLam = CalcLamCf( re, m_LamCfEqnType.Get() );
 
         double LamPercRefLen = LamPerc * lref;
 
-        double ReLam = ( vinf * LamPercRefLen ) / kineVisc;
+        double ReLam = reqL * LamPercRefLen;
 
         double CfpartLam = CalcLamCf( ReLam, m_LamCfEqnType() );
-        double CfpartTurb = CalcTurbCf( ReLam, m_geo_lref[i], m_TurbCfEqnType(),
-                                        m_SpecificHeatRatio(), m_geo_Roughness[i], m_geo_TawTwRatio[i], m_geo_TeTwRatio[i] );
+        double CfpartTurb = CalcTurbCf( ReLam, lref, m_TurbCfEqnType(), m_SpecificHeatRatio(), roughness, tawtwrat, tetwrat );
 
         m_TurbCfEqnName = AssignTurbCfEqnName( m_TurbCfEqnType() );
         m_LamCfEqnName = AssignLamCfEqnName( m_LamCfEqnType() );
 
-        m_geo_cf.push_back( CffullTurb - ( CfpartTurb * LamPerc ) +
-                          ( CfpartLam * LamPerc ) );
+        cf = CffullTurb - ( CfpartTurb * LamPerc ) + ( CfpartLam * LamPerc );
     }
-    else
-    {
-        m_geo_cf.push_back( 0 );
-    }
+    return cf;
 }
 
 void ParasiteDragMgrSingleton::Calculate_fineRat()
@@ -1278,9 +1266,15 @@ struct Karman_Schoenherr_p_functor
 double ParasiteDragMgrSingleton::CalcTurbCf( double ReyIn, double ref_leng, int cf_case,
         double roughness_h = 0, double gamma = 1.4, double taw_tw_ratio = 0, double te_tw_ratio = 0 )
 {
-    double CfOut, CfGuess, f, heightRatio, multiBy = 1.0;
+    double CfOut = 0;
+    double CfGuess, f, heightRatio, multiBy = 1.0;
     double r = 0.89; // Recovery Factor
     double n = 0.67; // Viscosity Power-Law Exponent
+
+    if (ReyIn == 0)
+    {
+        return CfOut;
+    }
 
     eli::mutil::nls::newton_raphson_method < double > nrm;
 
@@ -1424,20 +1418,20 @@ double ParasiteDragMgrSingleton::CalcTurbCf( double ReyIn, double ref_leng, int 
 
 double ParasiteDragMgrSingleton::CalcLamCf( double ReyIn, int cf_case )
 {
-    double CfOut;
+    double CfOut = 0;
 
-    switch ( cf_case )
+    if (ReyIn != 0)
     {
-    case vsp::CF_LAM_BLASIUS:
-        CfOut = 1.32824 / pow( ReyIn, 0.5 );
-        break;
+        switch (cf_case)
+        {
+        case vsp::CF_LAM_BLASIUS:
+            CfOut = 1.32824 / pow(ReyIn, 0.5);
+            break;
 
-    case vsp::CF_LAM_BLASIUS_W_HEAT:
-        CfOut = 0;
-        break;
-
-    default:
-        CfOut = 0;
+        case vsp::CF_LAM_BLASIUS_W_HEAT:
+            CfOut = 0;
+            break;
+        }
     }
 
     return CfOut;
@@ -2665,6 +2659,11 @@ void ParasiteDragMgrSingleton::UpdateParmActivity()
     {
         m_ReqL.Activate();
         m_Mach.Activate();
+        m_SpecificHeatRatio.Activate();
+    }
+
+    if ( m_TurbCfEqnType() == vsp::CF_TURB_ROUGHNESS_SCHLICHTING_AVG_FLOW_CORRECTION )
+    {
         m_SpecificHeatRatio.Activate();
     }
 }

@@ -10,6 +10,7 @@
 #include "FuselageGeom.h"
 #include "WingGeom.h"
 #include "BlankGeom.h"
+#include "BORGeom.h"
 #include "MeshGeom.h"
 #include "ConformalGeom.h"
 #include "CustomGeom.h"
@@ -21,12 +22,14 @@
 #include "StlHelper.h"
 #include "ParmMgr.h"
 #include "LinkMgr.h"
+#include "MeasureMgr.h"
 #include "AdvLinkMgr.h"
 #include "AnalysisMgr.h"
 #include "ParasiteDragMgr.h"
 #include "Quat.h"
 #include "StringUtil.h"
 #include "SubSurfaceMgr.h"
+#include "StructureMgr.h"
 #include "DesignVarMgr.h"
 #include "DXFUtil.h"
 #include "SVGUtil.h"
@@ -34,6 +37,7 @@
 #include "FileUtil.h"
 #include "VarPresetMgr.h"
 #include "VSPAEROMgr.h"
+#include "WireGeom.h"
 #include "main.h"
 
 #include "ProjectionMgr.h"
@@ -59,6 +63,12 @@ Vehicle::Vehicle()
     m_IGESToCubic.Init( "ToCubic", "IGESSettings", this, false, 0, 1 );
     m_IGESToCubicTol.Init( "ToCubicTol", "IGESSettings", this, 1e-6, 1e-12, 1e12 );
     m_IGESTrimTE.Init( "TrimTE", "IGESSettings", this, false, 0, 1 );
+
+    m_IGESLabelID.Init( "LabelID", "IGESSettings", this, true, 0, 1 );
+    m_IGESLabelName.Init( "LabelName", "IGESSettings", this, true, 0, 1 );
+    m_IGESLabelSurfNo.Init( "LabelSurfNo", "IGESSettings", this, true, 0, 1 );
+    m_IGESLabelSplitNo.Init( "LabelSplitNo", "IGESSettings", this, true, 0, 1 );
+    m_IGESLabelDelim.Init( "LabelDelim", "IGESSettings", this, vsp::DELIM_COMMA, vsp::DELIM_COMMA, vsp::DELIM_NUM_TYPES - 1 );
 
     m_DXFLenUnit.Init( "LenUnit", "DXFSettings", this, vsp::LEN_FT, vsp::LEN_MM, vsp::LEN_UNITLESS );
     m_DXFLenUnit.SetDescript( "Sets DXF Header Units; Numeric Values Unchanged" );
@@ -128,6 +138,14 @@ Vehicle::Vehicle()
     m_AxisLength.Init( "AxisLength", "Axis", this, 1.0, 1e-12, 1e12 );
     m_AxisLength.SetDescript( "Length of axis icon displayed on screen" );
 
+    m_TextSize.Init( "TextSize", "Text", this, 2.0, 0.0, 100.0 );
+    m_TextSize.SetDescript( "Size of text labels displayed on screen" );
+
+    m_MeasureLenUnit.Init( "LenUnit", "Measure", this, vsp::LEN_UNITLESS, vsp::LEN_MM, vsp::LEN_UNITLESS );
+
+    m_StructUnit.Init( "StructUnit", "FeaStructure", this, vsp::BFT_UNIT, vsp::SI_UNIT, vsp::BIN_UNIT );
+    m_StructUnit.SetDescript( "Unit System for FEA Structures" );
+
     // Initialize the group transformations object
     m_GroupTransformations.Init( this );
 
@@ -179,6 +197,7 @@ void Vehicle::Init()
     m_GeomTypeVec.push_back( GeomType( STACK_GEOM_TYPE, "STACK", true ) );
     m_GeomTypeVec.push_back( GeomType( BLANK_GEOM_TYPE, "BLANK", true ) );
     m_GeomTypeVec.push_back( GeomType( ELLIPSOID_GEOM_TYPE, "ELLIPSOID", true ) );
+    m_GeomTypeVec.push_back( GeomType( BOR_GEOM_TYPE, "BODYOFREVOLUTION", true ) );
     m_GeomTypeVec.push_back( GeomType( PROP_GEOM_TYPE, "PROP", true ) );
     m_GeomTypeVec.push_back( GeomType( HINGE_GEOM_TYPE, "HINGE", true ) );
     m_GeomTypeVec.push_back( GeomType( CONFORMAL_GEOM_TYPE, "CONFORMAL", true ) );
@@ -193,7 +212,6 @@ void Vehicle::Init()
     LinkMgr.RegisterContainer( this->GetID() );
     LinkMgr.RegisterContainer( m_CfdSettings.GetID() );
     LinkMgr.RegisterContainer( m_CfdGridDensity.GetID() );
-    LinkMgr.RegisterContainer( m_FeaGridDensity.GetID() );
     LinkMgr.RegisterContainer( VSPAEROMgr.GetID() );
     LinkMgr.RegisterContainer( WaveDragMgr.GetID() );
     LinkMgr.RegisterContainer( ParasiteDragMgr.GetID() );
@@ -324,6 +342,8 @@ void Vehicle::Wype()
     VarPresetMgr.Renew();
     ParasiteDragMgr.Renew();
     VSPAEROMgr.Renew();
+    MeasureMgr.Renew();
+    StructureMgr.Renew();
 }
 
 void Vehicle::SetVSP3FileName( const string & f_name )
@@ -342,9 +362,11 @@ void Vehicle::SetupPaths()
 #ifdef WIN32
     m_VSPAEROCmd = string( "vspaero.exe" );
     m_VIEWERCmd = string( "vspviewer.exe" );
+    m_SLICERCmd = string( "vspslicer.exe" );
 #else
     m_VSPAEROCmd = string( "vspaero" );
     m_VIEWERCmd = string( "vspviewer" );
+    m_SLICERCmd = string( "vspslicer" );
 #endif
 
     if( !CheckForFile( m_ExePath, m_VSPAEROCmd ) )
@@ -354,6 +376,10 @@ void Vehicle::SetupPaths()
     if( !CheckForFile( m_ExePath, m_VIEWERCmd ) )
     {
         printf("VSPAERO viewer not found.\n");
+    }
+    if ( !CheckForFile( m_ExePath, m_SLICERCmd ) )
+    {
+        printf( "VSPAERO slicer not found.\n" );
     }
 
     m_CustomScriptDirs.push_back( string( "./CustomScripts/" ) );
@@ -411,6 +437,17 @@ void Vehicle::Update( bool fullupdate )
         {
             g_ptr->Update( fullupdate );
         }
+    }
+
+    MeasureMgr.Update();
+}
+
+void Vehicle::UpdateGeom( const string &geom_id )
+{
+    Geom* g_ptr = FindGeom( geom_id );
+    if ( g_ptr )
+    {
+        g_ptr->Update( );
     }
 }
 
@@ -520,17 +557,19 @@ string Vehicle::CreateGeom( const GeomType & type )
     {
         new_geom = new EllipsoidGeom( this );
     }
+    else if ( type.m_Name == "BodyOfRevolution" || type.m_Name == "BODYOFREVOLUTION" )
+    {
+        new_geom = new BORGeom( this );
+    }
+    else if ( type.m_Name == "WireFrame" || type.m_Name == "WIREFRAME" )
+    {
+        new_geom = new WireGeom( this );
+    }
 
     if ( !new_geom )
     {
         printf( "Error: Could not create Geom of type: %s\n", type.m_Name.c_str() );
         return "NONE";
-    }
-
-    //==== Custom Geom Will be Updated After Scripts Are Read ====//
-    if ( type.m_Type != CUSTOM_GEOM_TYPE )
-    {
-        new_geom->Update();
     }
 
     m_GeomStoreVec.push_back( new_geom );
@@ -541,7 +580,6 @@ string Vehicle::CreateGeom( const GeomType & type )
         string id = new_geom->GetID();
         new_geom->CopyFrom( type_geom_ptr );
         new_geom->SetName( type.m_Name );
-        new_geom->Update();
     }
 
     return new_geom->GetID();
@@ -561,7 +599,6 @@ string Vehicle::AddGeom( const GeomType & type )
         {
             add_geom->SetType( type );
             CustomGeomMgr.InitGeom( geom_id, type.m_ModuleName, type.m_DisplayName );
-//            add_geom->Update();
         }
         //==== Update Conformal After Attachment to Parent ====//
         else if ( type.m_Type == CONFORMAL_GEOM_TYPE )
@@ -575,7 +612,8 @@ string Vehicle::AddGeom( const GeomType & type )
                      par->GetType().m_Type == MESH_GEOM_TYPE ||
                      par->GetType().m_Type == PT_CLOUD_GEOM_TYPE ||
                      par->GetType().m_Type == HINGE_GEOM_TYPE ||
-                     par->GetType().m_Type == CONFORMAL_GEOM_TYPE )
+                     par->GetType().m_Type == CONFORMAL_GEOM_TYPE ||
+                     par->GetType().m_Type == WIRE_FRAME_GEOM_TYPE )
                 {
                     MessageData errMsgData;
                     errMsgData.m_String = "Error";
@@ -595,8 +633,9 @@ string Vehicle::AddGeom( const GeomType & type )
                 MessageMgr::getInstance().SendAll( errMsgData );
             }
 
-            add_geom->Update();
         }
+
+        add_geom->Update();
     }
     return geom_id;
 }
@@ -1006,12 +1045,23 @@ void Vehicle::PasteClipboard()
             {
                 gPtr->SetParentID( parent_id );
                 parentGeom->AddChildID( gPtr->GetID() );
+
+                //==== Update gPtr and all children  ====//
+                if ( parentGeom->GetType().m_Type != HINGE_GEOM_TYPE )
+                {
+                    gPtr->SetIgnoreAbsFlag( true );
+                }
             }
 
-            //==== Update gPtr and all children  ====//
-            gPtr->SetIgnoreAbsFlag( true );
             gPtr->Update();
-            gPtr->SetIgnoreAbsFlag( false );
+
+            if ( parentGeom )
+            {
+                if ( parentGeom->GetType().m_Type != HINGE_GEOM_TYPE )
+                {
+                    gPtr->SetIgnoreAbsFlag( false );
+                }
+            }
         }
     }
 
@@ -1355,7 +1405,7 @@ xmlNodePtr Vehicle::EncodeXml( xmlNodePtr & node, int set )
     getVGuiDraw()->getLightMgr()->EncodeXml( vehicle_node );
 
     // Encode label information.
-    getVGuiDraw()->getLabelMgr()->EncodeXml( vehicle_node );
+    MeasureMgr.EncodeXml( vehicle_node );
 
     MaterialMgr.EncodeXml( node );
 
@@ -1374,7 +1424,7 @@ xmlNodePtr Vehicle::EncodeXml( xmlNodePtr & node, int set )
     VarPresetMgr.EncodeXml( node );
     m_CfdSettings.EncodeXml( node );
     m_CfdGridDensity.EncodeXml( node );
-    m_FeaGridDensity.EncodeXml( node );
+    StructureMgr.EncodeXml( node );
     m_ClippingMgr.EncodeXml( node );
     WaveDragMgr.EncodeXml( node );
     ParasiteDragMgr.EncodeXml( node );
@@ -1402,7 +1452,7 @@ xmlNodePtr Vehicle::DecodeXml( xmlNodePtr & node )
         getVGuiDraw()->getLightMgr()->DecodeXml( vehicle_node );
 
         // Decode label information.
-        getVGuiDraw()->getLabelMgr()->DecodeXml( vehicle_node );
+        MeasureMgr.DecodeXml( vehicle_node );
 
     }
 
@@ -1413,7 +1463,7 @@ xmlNodePtr Vehicle::DecodeXml( xmlNodePtr & node )
     VSPAEROMgr.DecodeXml( node );
     m_CfdSettings.DecodeXml( node );
     m_CfdGridDensity.DecodeXml( node );
-    m_FeaGridDensity.DecodeXml( node );
+    StructureMgr.DecodeXml( node );
     m_ClippingMgr.DecodeXml( node );
     WaveDragMgr.DecodeXml( node );
     ParasiteDragMgr.DecodeXml( node );
@@ -1481,6 +1531,8 @@ xmlNodePtr Vehicle::DecodeXmlGeomsOnly( xmlNodePtr & node )
             }
         }
     }
+
+    ForceUpdate();
 
     LinkMgr.DecodeXml( node );
     AdvLinkMgr.DecodeXml( node );
@@ -1636,7 +1688,7 @@ void Vehicle::WriteXSecFile( const string & file_name, int write_set )
     {
         if( geom_vec[i]->GetSetFlag( write_set ) )
         {
-            geom_cnt += geom_vec[i]->GetNumTotalSurfs();
+            geom_cnt += geom_vec[i]->GetNumTotalHrmSurfs();
         }
     }
 
@@ -2530,7 +2582,7 @@ void Vehicle::WriteSTEPFile( const string & file_name, int write_set )
                                 {
                                     SSLine *subline = (SSLine*) sub;
 
-                                    if( subline->m_ConstType() == SSLine::CONST_U )
+                                    if( subline->m_ConstType() == vsp::CONST_U )
                                     {
                                         usplit.push_back( subline->m_ConstVal() * surf_vec[j].GetUMax() );
                                     }
@@ -2554,10 +2606,21 @@ void Vehicle::WriteSTEPFile( const string & file_name, int write_set )
 
 void Vehicle::WriteIGESFile( const string & file_name, int write_set )
 {
+    WriteIGESFile( file_name, write_set, m_IGESLenUnit(), m_IGESSplitSubSurfs(), m_IGESSplitSurfs(), m_IGESToCubic(),
+                   m_IGESToCubicTol(), m_IGESTrimTE(), m_IGESLabelID(), m_IGESLabelName(), m_IGESLabelSurfNo(),
+                   m_IGESLabelSplitNo(), m_IGESLabelDelim() );
+}
+
+void Vehicle::WriteIGESFile( const string & file_name, int write_set, int lenUnit, bool splitSubSurfs,
+                             bool splitSurfs, bool toCubic, double toCubicTol, bool trimTE, bool labelID,
+                             bool labelName, bool labelSurfNo, bool labelSplitNo, int delimType )
+{
+    string delim = StringUtil::get_delim( delimType );
+
     DLL_IGES model;
 
     // Note, YD not handled by libIGES.
-    switch( m_IGESLenUnit() )
+    switch( lenUnit )
     {
     case vsp::LEN_CM:
         model.SetUnitsFlag( UNIT_CENTIMETER );
@@ -2595,7 +2658,7 @@ void Vehicle::WriteIGESFile( const string & file_name, int write_set )
 
                 vector < SubSurface *> ssvec = geom_vec[i]->GetSubSurfVec();
 
-                if ( m_IGESSplitSubSurfs() )
+                if ( splitSubSurfs )
                 {
                     for ( int k = 0; k < ssvec.size(); k++ )
                     {
@@ -2608,7 +2671,7 @@ void Vehicle::WriteIGESFile( const string & file_name, int write_set )
                                 {
                                     SSLine *subline = (SSLine*) sub;
 
-                                    if( subline->m_ConstType() == SSLine::CONST_U )
+                                    if( subline->m_ConstType() == vsp::CONST_U )
                                     {
                                         usplit.push_back( subline->m_ConstVal() * surf_vec[j].GetUMax() );
                                     }
@@ -2622,7 +2685,32 @@ void Vehicle::WriteIGESFile( const string & file_name, int write_set )
                     }
                 }
 
-                surf_vec[j].ToIGES( model, m_IGESSplitSurfs(), m_IGESToCubic(), m_IGESToCubicTol(), m_IGESTrimTE(), usplit, wsplit );
+                string prefix;
+
+                if ( labelID )
+                {
+                    prefix = geom_vec[i]->GetID();
+                }
+
+                if ( labelName )
+                {
+                    if ( prefix.size() > 0 )
+                    {
+                        prefix.append( delim );
+                    }
+                    prefix.append( geom_vec[i]->GetName() );
+                }
+
+                if ( labelSurfNo )
+                {
+                    if ( prefix.size() > 0 )
+                    {
+                        prefix.append( delim );
+                    }
+                    prefix.append( to_string( j ) );
+                }
+
+                surf_vec[j].ToIGES( model, splitSurfs, toCubic, toCubicTol, trimTE, usplit, wsplit, prefix, labelSplitNo, delim );
             }
         }
     }
@@ -3730,6 +3818,67 @@ string Vehicle::ImportFile( const string & file_name, int file_type )
             }
         }
     }
+    else if ( file_type == IMPORT_XSEC_WIRE )
+    {
+        FILE *fp;
+        char str[256];
+
+        //==== Make Sure File Exists ====//
+        if ( ( fp = fopen( file_name.c_str(), "r" ) ) == ( FILE * )NULL )
+        {
+            return id;
+        }
+
+        //==== Read first Line of file and compare against expected header ====//
+        fscanf( fp, "%s INPUT FILE\n\n", str );
+        if ( strcmp( "HERMITE", str ) != 0 )
+        {
+            fclose ( fp );
+            return id;
+        }
+        //==== Read in number of components ====//
+        int num_comps;
+        fscanf( fp, " NUMBER OF COMPONENTS = %d\n", &num_comps );
+
+        if ( num_comps <= 0 )
+        {
+            fclose ( fp );
+            return id;
+        }
+
+        // Make sure blank gets added to top level.
+        // Consider removing this to make blank added as child of active.
+        ClearActiveGeom();
+
+        GeomType type = GeomType( BLANK_GEOM_TYPE, "BLANK", true );
+        id = AddGeom( type );
+        if ( !id.compare( "NONE" ) )
+        {
+            return id;
+        }
+
+        // Make blank active so components will be children of it.
+        SetActiveGeom( id );
+
+        for ( int c = 0 ; c < num_comps ; c++ )
+        {
+            GeomType type = GeomType( WIRE_FRAME_GEOM_TYPE, "WIREFRAME", true );
+            string cid = AddGeom( type );
+            if ( !cid.compare( "NONE" ) )
+            {
+                return id;
+            }
+
+            WireGeom* new_geom = ( WireGeom* )FindGeom( cid );
+            if ( new_geom )
+            {
+                new_geom->ReadXSec( fp );
+            }
+        }
+        fclose( fp );
+
+        return id;
+    }
     else
     {
         GeomType type = GeomType( MESH_GEOM_TYPE, "MESH", true );
@@ -3923,6 +4072,8 @@ string Vehicle::ImportV2File( const string & file_name )
             }
         }
     }
+
+    ForceUpdate();
 
     m_CfdSettings.ReadV2File( root );
     m_CfdGridDensity.ReadV2File( root );
@@ -4196,4 +4347,91 @@ string Vehicle::WriteDegenGeomFile()
         }
     }
     return outStr;
+}
+
+vec3d Vehicle::CompPnt01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w)
+{
+    Geom* geom_ptr = FindGeom( geom_id );
+    vec3d ret;
+    if ( geom_ptr )
+    {
+        if ( surf_indx >= 0 && surf_indx < geom_ptr->GetNumTotalSurfs() )
+        {
+            ret = geom_ptr->CompPnt01(surf_indx, u, w);
+        }
+    }
+
+    return ret;
+}
+
+vec3d Vehicle::CompNorm01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w)
+{
+    Geom* geom_ptr = FindGeom( geom_id );
+    vec3d ret;
+    if ( geom_ptr )
+    {
+        if ( surf_indx >= 0 && surf_indx < geom_ptr->GetNumTotalSurfs() )
+        {
+            VspSurf *surf = geom_ptr->GetSurfPtr( surf_indx );
+            ret = surf->CompNorm01( u, w );
+        }
+    }
+
+    return ret;
+}
+
+void Vehicle::CompCurvature01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w, double &k1, double &k2, double &ka, double &kg)
+{
+    Geom* geom_ptr = FindGeom( geom_id );
+
+    k1 = 0.0;
+    k2 = 0.0;
+    ka = 0.0;
+    kg = 0.0;
+
+    if ( geom_ptr )
+    {
+        if ( surf_indx >= 0 && surf_indx < geom_ptr->GetNumTotalSurfs() )
+        {
+            VspSurf *surf = geom_ptr->GetSurfPtr( surf_indx );
+            if ( surf )
+            {
+                surf->CompCurvature01( u, w, k1, k2, ka, kg );
+            }
+        }
+    }
+}
+
+double Vehicle::ProjPnt01I(const std::string &geom_id, const vec3d & pt, int &surf_indx, double &u, double &w)
+{
+    double tol = 1e-12;
+
+    double dmin = std::numeric_limits<double>::max();
+
+    Geom * geom = FindGeom( geom_id );
+
+    if ( geom )
+    {
+        int nsurf = geom->GetNumTotalSurfs();
+        for ( int i = 0; i < nsurf; i++ )
+        {
+            double utest, wtest;
+
+            double d = geom->GetSurfPtr(i)->FindNearest01( utest, wtest, pt );
+
+            if ( d < dmin )
+            {
+                dmin = d;
+                u = utest;
+                w = wtest;
+                surf_indx = i;
+
+                if ( d < tol )
+                {
+                    break;
+                }
+            }
+        }
+    }
+    return dmin;
 }

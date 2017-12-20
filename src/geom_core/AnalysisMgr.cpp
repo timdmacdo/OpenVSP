@@ -463,6 +463,10 @@ void AnalysisMgrSingleton::RegisterBuiltins()
     ParasiteDragFullAnalysis *vspdbu = new ParasiteDragFullAnalysis();
 
     RegisterAnalysis( "ParasiteDrag", vspdbu );
+
+    CpSlicerAnalysis *cpsa = new CpSlicerAnalysis();
+
+    RegisterAnalysis( "CpSlicer", cpsa );
 }
 
 //======================================================================================//
@@ -1089,15 +1093,21 @@ void VSPAEROSinglePointAnalysis::SetDefaults()
     {
 
         //Case Setup
-        m_Inputs.Add( NameValData( "GeomSet",           VSPAEROMgr.m_GeomSet.Get()           ) );
-        m_Inputs.Add( NameValData( "AnalysisMethod",    VSPAEROMgr.m_AnalysisMethod.Get()    ) );
-        m_Inputs.Add( NameValData( "NCPU",              VSPAEROMgr.m_NCPU.Get()              ) );
-        m_Inputs.Add( NameValData( "WakeNumIter",       VSPAEROMgr.m_WakeNumIter.Get()       ) );
-        m_Inputs.Add( NameValData( "WakeAvgStartIter",  VSPAEROMgr.m_WakeAvgStartIter.Get()  ) );
-        m_Inputs.Add( NameValData( "WakeSkipUntilIter", VSPAEROMgr.m_WakeSkipUntilIter.Get() ) );
-        m_Inputs.Add( NameValData( "StabilityCalcFlag", VSPAEROMgr.m_StabilityCalcFlag.Get() ) );
-        m_Inputs.Add( NameValData( "StabilityCalcType", VSPAEROMgr.m_StabilityType.Get()     ) );
-        m_Inputs.Add( NameValData( "JacobiPrecondition",VSPAEROMgr.m_JacobiPrecondition.Get()) );
+        m_Inputs.Add( NameValData( "GeomSet",            VSPAEROMgr.m_GeomSet.Get()            ) );
+        m_Inputs.Add( NameValData( "AnalysisMethod",     VSPAEROMgr.m_AnalysisMethod.Get()     ) );
+        m_Inputs.Add( NameValData( "NCPU",               VSPAEROMgr.m_NCPU.Get()               ) );
+        m_Inputs.Add( NameValData( "WakeNumIter",        VSPAEROMgr.m_WakeNumIter.Get()        ) );
+        m_Inputs.Add( NameValData( "WakeAvgStartIter",   VSPAEROMgr.m_WakeAvgStartIter.Get()   ) );
+        m_Inputs.Add( NameValData( "WakeSkipUntilIter",  VSPAEROMgr.m_WakeSkipUntilIter.Get()  ) );
+        m_Inputs.Add( NameValData( "StabilityCalcFlag",  VSPAEROMgr.m_StabilityCalcFlag.Get()  ) );
+        m_Inputs.Add( NameValData( "UnsteadyType",       VSPAEROMgr.m_StabilityType.Get()      ) );
+        m_Inputs.Add( NameValData( "Precondition",       VSPAEROMgr.m_Precondition.Get()       ) );
+        m_Inputs.Add( NameValData( "VortexLift",         VSPAEROMgr.m_VortexLift.Get()         ) );
+        m_Inputs.Add( NameValData( "LeadingEdgeSuction", VSPAEROMgr.m_LeadingEdgeSuction.Get() ) );
+        m_Inputs.Add( NameValData( "KTCorrection",       VSPAEROMgr.m_KTCorrection.Get()       ) );
+        m_Inputs.Add( NameValData( "Symmetry",           VSPAEROMgr.m_Symmetry.Get()           ) );
+        m_Inputs.Add( NameValData( "BatchModeFlag",      VSPAEROMgr.m_BatchModeFlag.Get()      ) );
+        m_Inputs.Add( NameValData( "2DFEMFlag",          VSPAEROMgr.m_Write2DFEMFlag.Get()     ) );
 
         //Reference area, lengths
         m_Inputs.Add( NameValData( "RefFlag",           VSPAEROMgr.m_RefFlag.Get()           ) );
@@ -1276,6 +1286,15 @@ string VSPAEROSinglePointAnalysis::Execute()
         int wakeAvgStartIterOrig     = VSPAEROMgr.m_WakeAvgStartIter.Get();
         int wakeSkipUntilIterOrig    = VSPAEROMgr.m_WakeSkipUntilIter.Get();
         bool stabilityCalcFlagOrig   = VSPAEROMgr.m_StabilityCalcFlag.Get();
+        int stabilityTypeOrig        = VSPAEROMgr.m_StabilityType.Get();
+        int preconditionOrig         = VSPAEROMgr.m_Precondition.Get();
+        bool vortexLiftOrig          = VSPAEROMgr.m_VortexLift.Get();
+        bool leadingEdgeSuctionOrig  = VSPAEROMgr.m_LeadingEdgeSuction.Get();
+        bool ktCorrectionOrig        = VSPAEROMgr.m_KTCorrection.Get();
+        bool symmetryOrig            = VSPAEROMgr.m_Symmetry.Get();
+        bool batchmodeOrig           = VSPAEROMgr.m_BatchModeFlag.Get();
+        bool write2DFEMOrig          = VSPAEROMgr.m_Write2DFEMFlag.Get();
+
         nvd = m_Inputs.FindPtr( "NCPU", 0 );
         if ( nvd )
         {
@@ -1301,7 +1320,46 @@ string VSPAEROSinglePointAnalysis::Execute()
         {
             VSPAEROMgr.m_StabilityCalcFlag.Set( nvd->GetInt(0) );
         }
-
+        nvd = m_Inputs.FindPtr( "UnsteadyType", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_StabilityType.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "Precondition", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Precondition.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "VortexLift", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_VortexLift.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "LeadingEdgeSuction", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_LeadingEdgeSuction.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "KTCorrection", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_KTCorrection.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "Symmetry", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Symmetry.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "BatchModeFlag", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_BatchModeFlag.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "2DFEMFlag", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Write2DFEMFlag.Set( nvd->GetInt( 0 ) );
+        }
 
         //==== Execute Analysis ====//
         resId = VSPAEROMgr.ComputeSolver(stdout);
@@ -1340,7 +1398,14 @@ string VSPAEROSinglePointAnalysis::Execute()
         VSPAEROMgr.m_WakeAvgStartIter.Set( wakeAvgStartIterOrig );
         VSPAEROMgr.m_WakeSkipUntilIter.Set( wakeSkipUntilIterOrig );
         VSPAEROMgr.m_StabilityCalcFlag.Set( stabilityCalcFlagOrig );
-
+        VSPAEROMgr.m_StabilityType.Set( stabilityTypeOrig );
+        VSPAEROMgr.m_Precondition.Set( preconditionOrig );
+        VSPAEROMgr.m_VortexLift.Set( vortexLiftOrig );
+        VSPAEROMgr.m_LeadingEdgeSuction.Set( leadingEdgeSuctionOrig );
+        VSPAEROMgr.m_KTCorrection.Set( ktCorrectionOrig );
+        VSPAEROMgr.m_Symmetry.Set( symmetryOrig );
+        VSPAEROMgr.m_BatchModeFlag.Set( batchmodeOrig );
+        VSPAEROMgr.m_Write2DFEMFlag.Set( write2DFEMOrig );
     }
 
     return resId;
@@ -1355,16 +1420,21 @@ void VSPAEROSweepAnalysis::SetDefaults()
     {
 
         //Case Setup
-        m_Inputs.Add( NameValData( "GeomSet",           VSPAEROMgr.m_GeomSet.Get()           ) );
-        m_Inputs.Add( NameValData( "AnalysisMethod",    VSPAEROMgr.m_AnalysisMethod.Get()    ) );
-        m_Inputs.Add( NameValData( "NCPU",              VSPAEROMgr.m_NCPU.Get()              ) );
-        m_Inputs.Add( NameValData( "WakeNumIter",       VSPAEROMgr.m_WakeNumIter.Get()       ) );
-        m_Inputs.Add( NameValData( "WakeAvgStartIter",  VSPAEROMgr.m_WakeAvgStartIter.Get()  ) );
-        m_Inputs.Add( NameValData( "WakeSkipUntilIter", VSPAEROMgr.m_WakeSkipUntilIter.Get() ) );
-        m_Inputs.Add( NameValData( "StabilityCalcFlag", VSPAEROMgr.m_StabilityCalcFlag.Get() ) );
-        m_Inputs.Add( NameValData( "BatchModeFlag",     VSPAEROMgr.m_BatchModeFlag.Get()     ) );
-        m_Inputs.Add( NameValData( "Symmetry",          VSPAEROMgr.m_Symmetry.Get()          ) );
-        m_Inputs.Add( NameValData( "2DFEMFlag",         VSPAEROMgr.m_Write2DFEMFlag.Get()    ) );
+        m_Inputs.Add( NameValData( "GeomSet",            VSPAEROMgr.m_GeomSet.Get()            ) );
+        m_Inputs.Add( NameValData( "AnalysisMethod",     VSPAEROMgr.m_AnalysisMethod.Get()     ) );
+        m_Inputs.Add( NameValData( "NCPU",               VSPAEROMgr.m_NCPU.Get()               ) );
+        m_Inputs.Add( NameValData( "WakeNumIter",        VSPAEROMgr.m_WakeNumIter.Get()        ) );
+        m_Inputs.Add( NameValData( "WakeAvgStartIter",   VSPAEROMgr.m_WakeAvgStartIter.Get()   ) );
+        m_Inputs.Add( NameValData( "WakeSkipUntilIter",  VSPAEROMgr.m_WakeSkipUntilIter.Get()  ) );
+        m_Inputs.Add( NameValData( "StabilityCalcFlag",  VSPAEROMgr.m_StabilityCalcFlag.Get()  ) );
+        m_Inputs.Add( NameValData( "UnsteadyType",       VSPAEROMgr.m_StabilityType.Get()      ) );
+        m_Inputs.Add( NameValData( "Precondition",       VSPAEROMgr.m_Precondition.Get()       ) );
+        m_Inputs.Add( NameValData( "BatchModeFlag",      VSPAEROMgr.m_BatchModeFlag.Get()      ) );
+        m_Inputs.Add( NameValData( "Symmetry",           VSPAEROMgr.m_Symmetry.Get()           ) );
+        m_Inputs.Add( NameValData( "2DFEMFlag",          VSPAEROMgr.m_Write2DFEMFlag.Get()     ) );
+        m_Inputs.Add( NameValData( "VortexLift",         VSPAEROMgr.m_VortexLift.Get()         ) );
+        m_Inputs.Add( NameValData( "LeadingEdgeSuction", VSPAEROMgr.m_LeadingEdgeSuction.Get() ) );
+        m_Inputs.Add( NameValData( "KTCorrection",       VSPAEROMgr.m_KTCorrection.Get()       ) );
 
         //Reference area, lengths
         m_Inputs.Add( NameValData( "RefFlag",           VSPAEROMgr.m_RefFlag.Get()           ) );
@@ -1579,6 +1649,14 @@ string VSPAEROSweepAnalysis::Execute()
         int wakeAvgStartIterOrig     = VSPAEROMgr.m_WakeAvgStartIter.Get();
         int wakeSkipUntilIterOrig    = VSPAEROMgr.m_WakeSkipUntilIter.Get();
         bool stabilityCalcFlagOrig   = VSPAEROMgr.m_StabilityCalcFlag.Get();
+        int stabilityTypeOrig        = VSPAEROMgr.m_StabilityType.Get();
+        int preconditionOrig         = VSPAEROMgr.m_Precondition.Get();
+        bool BatchModeFlagOrig       = VSPAEROMgr.m_BatchModeFlag.Get();
+        bool symmetryOrig            = VSPAEROMgr.m_Symmetry.Get();
+        bool write2DFEMOrig          = VSPAEROMgr.m_Write2DFEMFlag.Get();
+        bool vortexLiftOrig          = VSPAEROMgr.m_VortexLift.Get();
+        bool leadingEdgeSuctionOrig  = VSPAEROMgr.m_LeadingEdgeSuction.Get();
+        bool ktCorrectionOrig        = VSPAEROMgr.m_KTCorrection.Get();
         nvd = m_Inputs.FindPtr( "NCPU", 0 );
         if ( nvd )
         {
@@ -1605,21 +1683,47 @@ string VSPAEROSweepAnalysis::Execute()
         {
             VSPAEROMgr.m_StabilityCalcFlag.Set( nvd->GetInt(0) );
         }
-
-        bool BatchModeFlagOrig       = VSPAEROMgr.m_BatchModeFlag.Get();
+        nvd = m_Inputs.FindPtr( "UnsteadyType", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_StabilityType.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "Precondition", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Precondition.Set( nvd->GetInt( 0 ) );
+        }
         nvd = m_Inputs.FindPtr( "BatchModeFlag", 0 );
         if ( nvd )
         {
             VSPAEROMgr.m_BatchModeFlag.Set( nvd->GetInt(0) );
         }
-
-        bool symmetryOrig   = VSPAEROMgr.m_Symmetry.Get();
         nvd = m_Inputs.FindPtr( "Symmetry", 0 );
-        VSPAEROMgr.m_Symmetry.Set( nvd->GetInt(0) );
-
-        bool write2DFEMOrig   = VSPAEROMgr.m_Write2DFEMFlag.Get();
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Symmetry.Set( nvd->GetInt( 0 ) );
+        }
         nvd = m_Inputs.FindPtr( "2DFEMFlag", 0 );
-        VSPAEROMgr.m_Write2DFEMFlag.Set( nvd->GetInt(0) );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_Write2DFEMFlag.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "VortexLift", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_VortexLift.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "LeadingEdgeSuction", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_LeadingEdgeSuction.Set( nvd->GetInt( 0 ) );
+        }
+        nvd = m_Inputs.FindPtr( "KTCorrection", 0 );
+        if ( nvd )
+        {
+            VSPAEROMgr.m_KTCorrection.Set( nvd->GetInt( 0 ) );
+        }
+
 
         //==== Execute Analysis ====//
         resId = VSPAEROMgr.ComputeSolver(stdout);
@@ -1661,11 +1765,14 @@ string VSPAEROSweepAnalysis::Execute()
         VSPAEROMgr.m_WakeAvgStartIter.Set( wakeAvgStartIterOrig );
         VSPAEROMgr.m_WakeSkipUntilIter.Set( wakeSkipUntilIterOrig );
         VSPAEROMgr.m_StabilityCalcFlag.Set( stabilityCalcFlagOrig );
-
+        VSPAEROMgr.m_StabilityType.Set( stabilityTypeOrig );
+        VSPAEROMgr.m_Precondition.Set( preconditionOrig );
         VSPAEROMgr.m_BatchModeFlag.Set( BatchModeFlagOrig );
-
         VSPAEROMgr.m_Symmetry.Set( symmetryOrig );
         VSPAEROMgr.m_Write2DFEMFlag.Set( write2DFEMOrig );
+        VSPAEROMgr.m_VortexLift.Set( vortexLiftOrig );
+        VSPAEROMgr.m_LeadingEdgeSuction.Set( leadingEdgeSuctionOrig );
+        VSPAEROMgr.m_KTCorrection.Set( ktCorrectionOrig );
     }
 
     return resId;
@@ -1819,6 +1926,66 @@ string ParasiteDragFullAnalysis::Execute()
         // Reference Area
         ParasiteDragMgr.m_RefFlag.Set( refFlagOrig );
         ParasiteDragMgr.m_Sref.Set( srefOrig );
+    }
+
+    return res_id;
+}
+
+//======================================================================================//
+//=================================== CpSlicer =========================================//
+//======================================================================================//
+
+void CpSlicerAnalysis::SetDefaults()
+{
+    m_Inputs.Clear();
+    Vehicle *veh = VehicleMgr.GetVehicle();
+
+    if ( veh )
+    {
+        // Cuts
+        m_Inputs.Add( NameValData( "XSlicePosVec", VSPAEROMgr.GetCpSlicePosVec( vsp::X_DIR ) ) );
+        m_Inputs.Add( NameValData( "YSlicePosVec", VSPAEROMgr.GetCpSlicePosVec( vsp::Y_DIR ) ) );
+        m_Inputs.Add( NameValData( "ZSlicePosVec", VSPAEROMgr.GetCpSlicePosVec( vsp::Z_DIR ) ) );
+    }
+    else
+    {
+        // TODO Throw an error here
+        printf( "ERROR - trying to set defaults without a vehicle: void CpSlicerAnalysis::SetDefaults()\n" );
+    }
+}
+
+string CpSlicerAnalysis::Execute()
+{
+    string res_id;
+    Vehicle *veh = VehicleMgr.GetVehicle();
+
+    if ( veh )
+    {
+        NameValData *nvd = NULL;
+
+        // Cuts
+        vector < double > xcutsOrig = VSPAEROMgr.GetCpSlicePosVec( vsp::X_DIR );
+        vector < double > ycutsOrig = VSPAEROMgr.GetCpSlicePosVec( vsp::Y_DIR );
+        vector < double > zcutsOrig = VSPAEROMgr.GetCpSlicePosVec( vsp::Z_DIR );
+
+        VSPAEROMgr.ClearCpSliceVec();
+
+        nvd = m_Inputs.FindPtr( "XSlicePosVec", 0 );
+        if ( nvd ) VSPAEROMgr.AddCpSliceVec( vsp::X_DIR, nvd->GetDoubleData() );
+
+        nvd = m_Inputs.FindPtr( "YSlicePosVec", 0 );
+        if ( nvd ) VSPAEROMgr.AddCpSliceVec( vsp::Y_DIR, nvd->GetDoubleData() );
+
+        nvd = m_Inputs.FindPtr( "ZSlicePosVec", 0 );
+        if ( nvd ) VSPAEROMgr.AddCpSliceVec( vsp::Z_DIR, nvd->GetDoubleData() );
+
+        // Execute analysis
+        res_id = VSPAEROMgr.ComputeCpSlices( stdout );
+
+        // ==== Restore original values that were overwritten by analysis inputs ==== //
+        VSPAEROMgr.AddCpSliceVec( vsp::X_DIR, xcutsOrig );
+        VSPAEROMgr.AddCpSliceVec( vsp::Y_DIR, ycutsOrig );
+        VSPAEROMgr.AddCpSliceVec( vsp::Z_DIR, zcutsOrig );
     }
 
     return res_id;

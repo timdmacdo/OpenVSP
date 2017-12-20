@@ -68,6 +68,12 @@ typedef struct
     vector< double >            areaTop;    //!
     vector< double >            areaBot;    //!
     vector< double >            u;          //!
+    vector< double >            toc2;       //!
+    vector< double >            tLoc2;      //!
+    vector< double >            anglele;    //!
+    vector< double >            anglete;    //!
+    vector< double >            radleTop;   //!
+    vector< double >            radleBot;   //!
 } DegenStick;
 
 typedef struct
@@ -91,6 +97,7 @@ typedef struct
     vsp::SUBSURF_TYPE           typeId;     //! enumeration for the typeName; vsp::SUBSURF_TYPE
     vector< double >            u;          //!
     vector< double >            w;          //!
+    vector< vec3d >             x;          //!
 } DegenSubSurf;
 
 typedef struct
@@ -100,6 +107,8 @@ typedef struct
     vector < double >           uEnd;
     vector < double >           wStart;
     vector < double >           wEnd;
+    vector < vec3d >            xStart;
+    vector < vec3d >            xEnd;
 } DegenHingeLine;
 
 typedef struct
@@ -231,12 +240,14 @@ public:
     void createSurfDegenPlate( const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts );
     void createBodyDegenPlate( const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts );
     void createDegenPlate( DegenPlate &degenPlate, const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts, int nLow, int nHigh, int startPnt );
-    void createSurfDegenStick( const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts );
+    void createSurfDegenStick( const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts, const VspSurf *foilSurf, const bool &urootcap );
     void createBodyDegenStick( const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts );
     void createDegenStick( DegenStick &degenStick, const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts, int nLow, int nHigh, int startPnt );
+    void augmentFoilSurfDegenStick( DegenStick &degenStick, const VspSurf *foilSurf, const vector< vector< vec3d > > &uw_pnts, const bool &urootcap );
+    void augmentFoilSurfDegenStick( DegenStick &degenStick, const vector< vector< vec3d > > &pntsarr, const vector< vector< vec3d > > &uw_pnts, const bool &urootcap );
     void createDegenDisk(  const vector< vector< vec3d > > &pntsarr, bool flipnormal );
     void addDegenSubSurf( SubSurface *ssurf, int surfIndx );
-    void addDegenHingeLine( SSControlSurf *csurf );
+    void addDegenHingeLine( SSControlSurf *csurf, int surfIndx );
 
     string makeCsvFmt( int n, bool newline = true );
     void write_degenGeomCsv_file( FILE* file_id );

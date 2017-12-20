@@ -41,9 +41,7 @@ void VSP_EDGE::init(void)
     Mach_ = 0.;
     
     Verbose_ = 1;
-    
-    ThereAreChildren_ = 0;
-    
+        
     Child1_ = Child2_ = NULL;
     
     Node1_ = 0;
@@ -108,7 +106,13 @@ void VSP_EDGE::init(void)
     VortexLoop2DownWindWeight_ = 0.;
 
     Gamma_ = 0.;   
+
+    ThicknessToChord_ = 0.;   
     
+    LocationOfMaxThickness_ = 0.;   
+    
+    RadiusToChord_ = 0.;                                    
+  
 }
 
 /*##############################################################################
@@ -210,14 +214,42 @@ VSP_EDGE& VSP_EDGE::operator=(const VSP_EDGE &VSPEdge)
     Vec_[0] = VSPEdge.Vec_[0];
     Vec_[1] = VSPEdge.Vec_[1];
     Vec_[2] = VSPEdge.Vec_[2];
+    
+    Sigma_ = VSPEdge.Sigma_;
 
     Length_ = VSPEdge.Length_;
+    
+    LocalSpacing_ = VSPEdge.LocalSpacing_;
 
+    Mach_ = VSPEdge.Mach_;
+    
     // Tolerances
     
     Tolerance_1_ = VSPEdge.Tolerance_1_;
     Tolerance_2_ = VSPEdge.Tolerance_2_;
     Tolerance_4_ = VSPEdge.Tolerance_4_;
+    
+    // Children
+
+    Child1_ = VSPEdge.Child1_;
+    Child2_ = VSPEdge.Child2_;
+    
+    // Edge coefs
+    
+    EdgeCoef_[0] = VSPEdge.EdgeCoef_[0];
+    EdgeCoef_[1] = VSPEdge.EdgeCoef_[1];
+    
+    // Circulation strength
+    
+    Gamma_ = VSPEdge.Gamma_;
+    
+    // Airfoil information                                  
+  
+    ThicknessToChord_ = VSPEdge.ThicknessToChord_;
+    
+    LocationOfMaxThickness_ = VSPEdge.LocationOfMaxThickness_;
+    
+    RadiusToChord_ = VSPEdge.RadiusToChord_;    
     
     return *this;
     
@@ -233,7 +265,7 @@ VSP_EDGE::~VSP_EDGE(void)
 {
 
    // Nothing to do...
-   
+
 }
 
 /*##############################################################################
@@ -704,3 +736,19 @@ void VSP_EDGE::CalculateTrefftzForces(double FreeStream[3])
 }
 
 
+/*##############################################################################
+#                                                                              #
+#                   VSP_EDGE CalculateNormalTrefftzForces                      #
+#                                                                              #
+##############################################################################*/
+
+void VSP_EDGE::CalculateNormalTrefftzForces(double FreeStream[3])
+{
+
+    vector_cross(FreeStream, Vec_, Normal_Trefftz_Forces_);
+   
+    Normal_Trefftz_Forces_[0] *= Length_*Gamma_;
+    Normal_Trefftz_Forces_[1] *= Length_*Gamma_;
+    Normal_Trefftz_Forces_[2] *= Length_*Gamma_;
+
+}

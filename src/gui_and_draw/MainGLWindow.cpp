@@ -3,6 +3,7 @@
 #include "Vehicle.h"
 #include "ScreenMgr.h"
 #include "CfdMeshScreen.h"
+#include "StructScreen.h"
 #include "Display.h"
 #include "Scene.h"
 #include "Viewport.h"
@@ -17,8 +18,9 @@
 #include "Texture2D.h"
 #include "Entity.h"
 #include "Ruler.h"
+#include "Probe.h"
 #include "GraphicEngine.h"
-#include "ManageLabelScreen.h"
+#include "ManageMeasureScreen.h"
 #include "ManageLightingScreen.h"
 #include "ManageGeomScreen.h"
 #include "ManageCORScreen.h"
@@ -32,6 +34,7 @@
 #include "ManageViewScreen.h"
 #include "WaveDragScreen.h"
 #include "VSPAEROScreen.h"
+#include "MeasureMgr.h"
 
 #pragma warning(disable:4244)
 
@@ -283,12 +286,24 @@ void VspGlWindow::update()
             cfdScreen->LoadDrawObjs( drawObjs );
         }
 
-        // Load Render Objects from labelScreen.
-        ManageLabelScreen * labelScreen = dynamic_cast< ManageLabelScreen* >
-            ( m_ScreenMgr->GetScreen( ScreenMgr::VSP_LABEL_SCREEN ) );
-        if( labelScreen )
+        // I don't like having this Update() here.  However, there does not appear
+        // to be a better place to put it.  Vehicle::Update does not get called
+        // frequently enough.
+        MeasureMgr.Update();
+        // Load Render Objects from measureScreen.
+        ManageMeasureScreen * measureScreen = dynamic_cast< ManageMeasureScreen* >
+        ( m_ScreenMgr->GetScreen( ScreenMgr::VSP_MEASURE_SCREEN ) );
+        if( measureScreen )
         {
-            labelScreen->LoadDrawObjs( drawObjs );
+            measureScreen->LoadDrawObjs( drawObjs );
+        }
+
+        // Load Render Objects from FeaStructScreen.
+        StructScreen * structScreen = dynamic_cast< StructScreen* >
+            ( m_ScreenMgr->GetScreen( ScreenMgr::VSP_STRUCT_SCREEN ) );
+        if( structScreen )
+        {
+            structScreen->LoadDrawObjs( drawObjs );
         }
 
         // Load Render Objects from lightScreen.
@@ -558,6 +573,36 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
             }
             break;
 
+        case DrawObj::VSP_WIRE_SHADED_TRIS:
+            if( id == 0xFFFFFFFF )
+            {
+                m_GEngine->getScene()->createObject( Common::VSP_OBJECT_CFD_ENTITY, &id );
+
+                ID idInfo;
+                idInfo.bufferID = id;
+                idInfo.geomID = objects[i]->m_GeomID;
+                m_ids.push_back( idInfo );
+            }
+            eObj = dynamic_cast<VSPGraphic::Entity*> ( m_GEngine->getScene()->getObject( id ) );
+            if( eObj )
+            {
+                eObj->setVisibility( objects[i]->m_Visible );
+                eObj->setPrimType( Common::VSP_TRIANGLES );
+                eObj->setRenderStyle( Common::VSP_DRAW_WIRE_FRAME_SHADED );
+                eObj->setLineColor( red, green, blue );
+                eObj->setLineWidth( lineWidth );
+
+                eObj->setMaterial( objects[i]->m_MaterialInfo.Ambient, objects[i]->m_MaterialInfo.Diffuse,
+                                   objects[i]->m_MaterialInfo.Specular, objects[i]->m_MaterialInfo.Emission,
+                                   objects[i]->m_MaterialInfo.Shininess );
+
+                if( objects[i]->m_GeomChanged )
+                {
+                    _loadTrisData( eObj, objects[i] );
+                }
+            }
+            break;
+
         case DrawObj::VSP_HIDDEN_QUADS:
             if( id == 0xFFFFFFFF )
             {
@@ -632,6 +677,36 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
                 eObj->setVisibility( objects[i]->m_Visible );
                 eObj->setPrimType( Common::VSP_QUADS );
                 eObj->setRenderStyle( Common::VSP_DRAW_WIRE_FRAME );
+                eObj->setLineColor( red, green, blue );
+                eObj->setLineWidth( lineWidth );
+
+                eObj->setMaterial( objects[i]->m_MaterialInfo.Ambient, objects[i]->m_MaterialInfo.Diffuse,
+                                   objects[i]->m_MaterialInfo.Specular, objects[i]->m_MaterialInfo.Emission,
+                                   objects[i]->m_MaterialInfo.Shininess );
+
+                if ( objects[i]->m_GeomChanged )
+                {
+                    _loadQuadsData( eObj, objects[i] );
+                }
+            }
+            break;
+
+        case DrawObj::VSP_WIRE_SHADED_QUADS:
+            if ( id == 0xFFFFFFFF )
+            {
+                m_GEngine->getScene()->createObject( Common::VSP_OBJECT_ENTITY, &id );
+
+                ID idInfo;
+                idInfo.bufferID = id;
+                idInfo.geomID = objects[i]->m_GeomID;
+                m_ids.push_back( idInfo );
+            }
+            eObj = dynamic_cast<VSPGraphic::Entity*> ( m_GEngine->getScene()->getObject( id ) );
+            if ( eObj )
+            {
+                eObj->setVisibility( objects[i]->m_Visible );
+                eObj->setPrimType( Common::VSP_QUADS );
+                eObj->setRenderStyle( Common::VSP_DRAW_WIRE_FRAME_SHADED );
                 eObj->setLineColor( red, green, blue );
                 eObj->setLineWidth( lineWidth );
 
@@ -756,9 +831,8 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
             id = 0xFFFFFFFF;
         }
 
+        VSPGraphic::Probe * probe;
         VSPGraphic::Ruler * ruler;
-
-        glm::vec3 start, end, offset;
 
         switch( objects[i]->m_Type )
         {
@@ -775,11 +849,15 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
             ruler = dynamic_cast<VSPGraphic::Ruler*> ( m_GEngine->getScene()->getObject( id ) );
             if( ruler )
             {
+                ruler->setVisibility( objects[i]->m_Visible );
+
                 ruler->setTextColor( (float)objects[i]->m_TextColor.x(),
                     (float)objects[i]->m_TextColor.y(),
                     (float)objects[i]->m_TextColor.z() );
 
                 ruler->setTextSize( (float)objects[i]->m_TextSize );
+
+                glm::vec3 start, end, offset;
 
                 switch( objects[i]->m_Ruler.Step )
                 {
@@ -801,7 +879,7 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
                     end = glm::vec3( objects[i]->m_Ruler.End.x(),
                         objects[i]->m_Ruler.End.y(),
                         objects[i]->m_Ruler.End.z() );
-                    ruler->placeRuler( start, end );
+                    ruler->placeRuler( start, end, objects[i]->m_Ruler.Label );
                     break;
 
                 case DrawObj::VSP_RULER_STEP_COMPLETE:
@@ -814,7 +892,7 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
                     offset = glm::vec3( objects[i]->m_Ruler.Offset.x(),
                         objects[i]->m_Ruler.Offset.y(),
                         objects[i]->m_Ruler.Offset.z() );
-                    ruler->placeRuler( start, end, offset );
+                    ruler->placeRuler( start, end, offset, objects[i]->m_Ruler.Label );
                     break;
 
                 default:
@@ -822,7 +900,64 @@ void VspGlWindow::_update( std::vector<DrawObj *> objects )
                 }
             }
             break;
- 
+
+        case DrawObj::VSP_PROBE:
+            if( id == 0xFFFFFFFF )
+            {
+                m_GEngine->getScene()->createObject( Common::VSP_OBJECT_PROBE, &id );
+
+                ID idInfo;
+                idInfo.bufferID = id;
+                idInfo.geomID = objects[i]->m_GeomID;
+                m_ids.push_back( idInfo );
+            }
+            probe = dynamic_cast<VSPGraphic::Probe*> ( m_GEngine->getScene()->getObject( id ) );
+            if( probe )
+            {
+                probe->setVisibility( objects[i]->m_Visible );
+
+                probe->setTextColor( (float)objects[i]->m_TextColor.x(),
+                    (float)objects[i]->m_TextColor.y(),
+                    (float)objects[i]->m_TextColor.z() );
+
+                probe->setTextSize( (float)objects[i]->m_TextSize );
+
+                glm::vec3 pt, norm;
+                float len;
+
+                switch( objects[i]->m_Probe.Step )
+                {
+                case DrawObj::VSP_PROBE_STEP_ZERO:
+                    probe->reset();
+                    break;
+
+                case DrawObj::VSP_PROBE_STEP_ONE:
+                    pt = glm::vec3( objects[i]->m_Probe.Pt.x(),
+                        objects[i]->m_Probe.Pt.y(),
+                        objects[i]->m_Probe.Pt.z() );
+                    norm = glm::vec3( objects[i]->m_Probe.Norm.x(),
+                        objects[i]->m_Probe.Norm.y(),
+                        objects[i]->m_Probe.Norm.z() );
+                    probe->placeProbe( pt, norm, objects[i]->m_Probe.Label );
+                    break;
+
+                case DrawObj::VSP_PROBE_STEP_COMPLETE:
+                    pt = glm::vec3( objects[i]->m_Probe.Pt.x(),
+                        objects[i]->m_Probe.Pt.y(),
+                        objects[i]->m_Probe.Pt.z() );
+                    norm = glm::vec3( objects[i]->m_Probe.Norm.x(),
+                        objects[i]->m_Probe.Norm.y(),
+                        objects[i]->m_Probe.Norm.z() );
+                    len = objects[i]->m_Probe.Len;
+                    probe->placeProbe( pt, norm, len, objects[i]->m_Probe.Label );
+                    break;
+
+                default:
+                    break;
+                }
+            }
+            break;
+
         default:
             break;
        }
@@ -1916,18 +2051,18 @@ void VspGlWindow::_sendFeedback( Selectable * selected )
     // Find out where feedback is heading...
     std::string selectedFeedbackName = selected->getGroup();
 
-    // Label Screen Feedback
-    ManageLabelScreen * labelScreen = dynamic_cast<ManageLabelScreen*>
-        ( m_ScreenMgr->GetScreen( ScreenMgr::VSP_LABEL_SCREEN ) );
+    // Probe Screen Feedback
+    ManageMeasureScreen * measureScreen = dynamic_cast<ManageMeasureScreen*>
+    ( m_ScreenMgr->GetScreen( ScreenMgr::VSP_MEASURE_SCREEN ) );
 
-    if( labelScreen && labelScreen->getFeedbackGroupName() == selectedFeedbackName )
+    if( measureScreen && measureScreen->getFeedbackGroupName() == selectedFeedbackName )
     {
         // Location feedback
         SelectedLoc * loc = dynamic_cast<SelectedLoc*> ( selected );
         if( loc )
         {
             glm::vec3 placement = loc->getLoc();
-            labelScreen->Set( vec3d(placement.x, placement.y, placement.z ) );
+            measureScreen->Set( vec3d( placement.x, placement.y, placement.z ) );
 
             // Only one selection is needed for label, remove this 'selected' from selection list.
             m_GEngine->getScene()->removeSelected( selected );
@@ -1948,7 +2083,7 @@ void VspGlWindow::_sendFeedback( Selectable * selected )
                     int index = id->geomID.find_last_of( '_' );
                     std::string baseId = id->geomID.substr( 0, index );
                     glm::vec3 placement = e->getVertexVec(pnt->getIndex());
-                    labelScreen->Set( vec3d( placement.x, placement.y, placement.z ), baseId );
+                    measureScreen->Set( vec3d( placement.x, placement.y, placement.z ), baseId );
 
                     // Only one selection is needed for label, remove this 'selected' from selection list.
                     m_GEngine->getScene()->removeSelected( selected );

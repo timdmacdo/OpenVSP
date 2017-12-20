@@ -29,6 +29,7 @@ ADD_LIBRARY(gui_and_draw
 AdvLinkScreen.cpp
 BlankScreen.cpp
 BEMOptionsScreen.cpp
+BORScreen.cpp
 CfdMeshScreen.cpp
 ClippingScreen.cpp
 CompGeomScreen.cpp
@@ -39,7 +40,7 @@ DesignVarScreen.cpp
 DXFOptionsScreen.cpp
 EllipsoidScreen.cpp
 ExportScreen.cpp
-FeaStructScreen.cpp
+FeaPartEditScreen.cpp
 FitModelScreen.cpp
 FuselageScreen.cpp
 GroupLayout.cpp
@@ -53,8 +54,8 @@ MainVSPScreen.cpp
 ManageBackgroundScreen.cpp
 ManageCORScreen.cpp
 ManageGeomScreen.cpp
-ManageLabelScreen.cpp
 ManageLightingScreen.cpp
+ManageMeasureScreen.cpp
 ManageTextureScreen.cpp
 ManageViewScreen.cpp
 MassPropScreen.cpp
@@ -79,6 +80,7 @@ SelectFileScreen.cpp
 SetEditorScreen.cpp
 SnapToScreen.cpp
 StackScreen.cpp
+StructScreen.cpp
 STEPOptionsScreen.cpp
 STLOptionsScreen.cpp
 SubGLWindow.cpp
@@ -91,9 +93,11 @@ VSPAEROScreen.cpp
 VSPWindow.cpp
 WaveDragScreen.cpp
 WingScreen.cpp
+WireScreen.cpp
 AdvLinkScreen.h
 BlankScreen.h
 BEMOptionsScreen.h
+BORScreen.h
 CfdMeshScreen.h
 ClippingScreen.h
 CompGeomScreen.h
@@ -104,7 +108,7 @@ DesignVarScreen.h
 DXFOptionsScreen.h
 ExportScreen.h
 EllipsoidScreen.h
-FeaStructScreen.h
+FeaPartEditScreen.h
 FitModelScreen.h
 FuselageScreen.h
 GroupLayout.h
@@ -118,8 +122,8 @@ MainVSPScreen.h
 ManageBackgroundScreen.h
 ManageCORScreen.h
 ManageGeomScreen.h
-ManageLabelScreen.h
 ManageLightingScreen.h
+ManageMeasureScreen.h
 ManageTextureScreen.h
 ManageViewScreen.h
 MassPropScreen.h
@@ -144,6 +148,7 @@ SelectFileScreen.h
 SetEditorScreen.h
 SnapToScreen.h
 StackScreen.h
+StructScreen.h
 STEPOptionsScreen.h
 STLOptionsScreen.h
 SubGLWindow.h
@@ -156,6 +161,7 @@ VSPAEROScreen.h
 VSPWindow.h
 WaveDragScreen.h
 WingScreen.h
+WireScreen.h
 )
 
 

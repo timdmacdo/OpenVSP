@@ -34,6 +34,12 @@ void VSP_GEOM::init(void)
     
     LoadDeformationFile_ = 0;
     
+    DoGroundEffectsAnalysis_ = 0;
+    
+    VehicleRotationAngleVector_[0] = 0.;    
+    VehicleRotationAngleVector_[1] = 0.;    
+    VehicleRotationAngleVector_[2] = 0.;    
+    
 }
 
 /*##############################################################################
@@ -130,6 +136,8 @@ int VSP_GEOM::ReadFile(char *FileName)
               
     }
     
+    printf("NumberOfSurfaces_: %d \n",NumberOfSurfaces_);    
+
     // Load in FEM analysis data
     
     if ( LoadDeformationFile_ ) LoadFEMDeformationData(FileName);
@@ -215,7 +223,23 @@ void VSP_GEOM::Read_CART3D_File(char *FileName)
     NumberOfSurfaces_       = 1;
     
     VSP_Surface_ = new VSP_SURFACE[NumberOfSurfaces_ + 1];
+
+    // If this is a ground effects analysis, set flag
     
+    if ( DoGroundEffectsAnalysis_ ) {
+
+       VSP_Surface(1).DoGroundEffectsAnalysis() = 1;
+      
+       VSP_Surface(1).GroundEffectsRotationAngle() = VehicleRotationAngleVector(1);
+      
+       VSP_Surface(1).GroundEffectsCGLocation(0) = VehicleRotationAxisLocation(0);
+       VSP_Surface(1).GroundEffectsCGLocation(1) = VehicleRotationAxisLocation(1);
+       VSP_Surface(1).GroundEffectsCGLocation(2) = VehicleRotationAxisLocation(2);
+
+       VSP_Surface(1).GroundEffectsHeightAboveGround() = HeightAboveGround();
+
+    }
+        
     // Read in the wing data
 
     sprintf(Name,"CART3D");
@@ -226,12 +250,14 @@ void VSP_GEOM::Read_CART3D_File(char *FileName)
 
     fclose(Cart3D_File);
     
-    // Now see if a degen file exists, open it, and look for rotor info
+    // Now see if a degen file exists
 
     sprintf(VSP_Degen_File_Name,"%s_DegenGeom.csv",FileName);
 
     if ( (VSP_Degen_File = fopen(VSP_Degen_File_Name,"r")) != NULL ) {
 
+       // See if any rotors are defined
+       
        NumberOfRotors_ = 0;
        
        Done = 0;
@@ -302,6 +328,14 @@ void VSP_GEOM::Read_CART3D_File(char *FileName)
        
        printf("Found: %d Rotors \n",NumberOfRotors_);
        
+       rewind(VSP_Degen_File);  
+              
+       // Now search for control surface hinges
+       
+       // Close file
+       
+       fclose(VSP_Degen_File);
+       
     }    
 
 }
@@ -315,16 +349,24 @@ void VSP_GEOM::Read_CART3D_File(char *FileName)
 void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
 {
 
-    int i, Wing, Done, NumberOfBodySets, BodySet, Surface;
+    int i, Wing, Done, NumberOfBodySets, BodySet, Surface,SurfNDx, GeomIDFlags;
     int TotalNumberOfWings, TotalNumberOfBodies;
-    int *ReadInThisWing, *ReadInThisBody;
+    int *ReadInThisWing, *ReadInThisBody, ComponentID;
     double Diam, x, y, z, nx, ny, nz, Epsilon, MinVal, MaxVal;
     char VSP_File_Name[2000], DumChar[2000], Type[2000], Name[2000];
+    char GeomID[2000], LastGeomID[2000];
+    char Comma[2000], *Next;
     VSP_SURFACE SurfaceParser;
     BBOX ComponentBBox;
     FILE *VSP_Degen_File;
     
     MinVal = MaxVal = 0.;
+    
+    ComponentID = 0;
+    
+    GeomIDFlags = 0;
+    
+    sprintf(Comma,",");
     
     // Open degen file
 
@@ -359,7 +401,21 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
      
        if ( fgets(DumChar,1000,VSP_Degen_File) == NULL ) Done = 1;   
        
+       if ( strstr(DumChar,"GEOMID") != NULL ) GeomIDFlags = 1;
+       
        if ( strncmp(DumChar,"LIFTING_SURFACE",15) == 0 ) TotalNumberOfWings++;
+       
+    }
+    
+    if ( GeomIDFlags ) {
+       
+       printf("GeomIDFlags are defined! \n");
+       
+    }
+    
+    else {
+       
+       printf("GeomIDFlags are NOT defined! \n");       
        
     }
     
@@ -505,9 +561,7 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
                 NumberOfDegenBodies_++;
                 
                 ReadInThisBody[i] = -DoSymmetryPlaneSolve_;
-                
-                printf("ReadInThisBody[i]: %d \n",ReadInThisBody[i]);
-                
+
              }
           
           }
@@ -616,10 +670,32 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
 
     VSP_Surface_ = new VSP_SURFACE[NumberOfSurfaces_ + 1];
     
+    // If this is a ground effects analysis, set flag
+    
+    if ( DoGroundEffectsAnalysis_ ) {
+    
+       for ( i = 1 ; i <= NumberOfSurfaces_ ; i++ ) {
+         
+          VSP_Surface(i).DoGroundEffectsAnalysis() = 1;
+         
+          VSP_Surface(i).GroundEffectsRotationAngle() = VehicleRotationAngleVector(1);
+         
+          VSP_Surface(i).GroundEffectsCGLocation(0) = VehicleRotationAxisLocation(0);
+          VSP_Surface(i).GroundEffectsCGLocation(1) = VehicleRotationAxisLocation(1);
+          VSP_Surface(i).GroundEffectsCGLocation(2) = VehicleRotationAxisLocation(2);
+
+          VSP_Surface(i).GroundEffectsHeightAboveGround() = HeightAboveGround();
+         
+       }
+      
+    }
+ 
     // Read in the wing data
     
-    Surface = 0;
+    sprintf(LastGeomID," ");
     
+    Surface = 0;
+
     for ( Wing = 1 ; Wing <= TotalNumberOfWings ; Wing++ ) {
 
        Done = 0;
@@ -629,24 +705,46 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
           fgets(DumChar,1000,VSP_Degen_File);
           
           if ( strncmp(DumChar,"LIFTING_SURFACE",15) == 0 ) Done = 1;
-          
+     
        }
        
        if ( ReadInThisWing[Wing] ) {
           
           Surface++;
-              
-          sscanf(DumChar,"%15s,%s",Type,Name);
 
-          printf("Working on reading wing: %d --> %s \n",Wing,Name);
+          Next = strtok(DumChar,Comma); Next[strcspn(Next, "\n")] = 0;  sprintf(Type,"%s",Next);            
+          Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(Name,"%s",Next);       
+          
+          if ( GeomIDFlags ) {
+             
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;      
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(GeomID,"%s",Next);
+             
+          }
+          
+          else {
+             
+              sprintf(GeomID,"%s",Name);
+              
+          }
+
+          if ( Verbose_ ) printf("Working on reading wing: %d --> %s with component ID: %s \n",Wing,Name,GeomID);
   
           VSP_Surface(Surface).ReadWingDataFromFile(Name,VSP_Degen_File);
+          
+          if ( strcmp(LastGeomID,GeomID) != 0 ) ComponentID++;
+          
+          sprintf(LastGeomID,"%s",GeomID);
+          
+          VSP_Surface(Surface).ComponentID() = ComponentID;
           
        }
        
     }
         
     // Read in the body data
+
+    sprintf(LastGeomID," ");
 
     for ( BodySet = 1 ; BodySet <= NumberOfBodySets ; BodySet++ ) {
         
@@ -676,12 +774,32 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
           
           Surface++;
             
-          sscanf(DumChar,"%4s,%s",Type,Name);
+          Next = strtok(DumChar,Comma); Next[strcspn(Next, "\n")] = 0;  sprintf(Type,"%s",Next);            
+          Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(Name,"%s",Next);   
+          
+          if ( GeomIDFlags ) {
+                 
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;      
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(GeomID,"%s",Next);
+             
+          }
+          
+          else {
+             
+             sprintf(GeomID,"%s",Name);
+             
+          } 
 
-          if ( Verbose_ ) printf("Working on reading #2 horizontal slice for body: %d --> %s ... SymFlag: %d \n",BodySet,Name,ReadInThisBody[i]); fflush(NULL);
+          if ( Verbose_ ) printf("Working on reading #1 horizontal slice for body: %d --> %s ... SymFlag: %d and Component ID: %s \n",BodySet,Name,ReadInThisBody[i],GeomID); fflush(NULL);
                  
           VSP_Surface(Surface).ReadBodyDataFromFile(Name,2,VSP_Degen_File);
           
+          if ( strcmp(LastGeomID,GeomID) != 0 ) ComponentID++;
+          
+          sprintf(LastGeomID,"%s",GeomID);
+          
+          VSP_Surface(Surface).ComponentID() = ComponentID;
+
        }
 
        // Load in the horizontal slices ... read in half span geometry ... as it lies on the symmetry plane
@@ -710,11 +828,31 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
           
           Surface++;
    
-          sscanf(DumChar,"%4s,%s",Type,Name);
-   
-          if ( Verbose_ ) printf("Working on reading #1 horizontal slice for body: %d --> %s ... SymFlag: %d \n",BodySet,Name,ReadInThisBody[i]); fflush(NULL);
+          Next = strtok(DumChar,Comma); Next[strcspn(Next, "\n")] = 0;  sprintf(Type,"%s",Next);            
+          Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(Name,"%s",Next);       
+          
+          if ( GeomIDFlags ) {
+             
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;      
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(GeomID,"%s",Next); 
+             
+          }
+          
+          else {
+             
+             sprintf(GeomID,"%s",Name);
+             
+          }
+             
+          if ( Verbose_ ) printf("Working on reading #2 horizontal slice for body: %d --> %s ... SymFlag: %d and Component ID: %s \n",BodySet,Name,ReadInThisBody[i],GeomID); fflush(NULL);
                  
           VSP_Surface(Surface).ReadBodyDataFromFile(Name,1,VSP_Degen_File);
+          
+          if ( strcmp(LastGeomID,GeomID) != 0 ) ComponentID++;
+          
+          sprintf(LastGeomID,"%s",GeomID);
+          
+          VSP_Surface(Surface).ComponentID() = ComponentID;
           
        }
           
@@ -744,12 +882,31 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
        
           Surface++;
        
-          sscanf(DumChar,"%4s,%s",Type,Name);
-   
-          if ( Verbose_ ) printf("Working on reading vertical slice for body: %d --> %s \n",BodySet,Name);
-                 
+          Next = strtok(DumChar,Comma); Next[strcspn(Next, "\n")] = 0;  sprintf(Type,"%s",Next);            
+          Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(Name,"%s",Next);   
+          
+          if ( GeomIDFlags ) {
+                  
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;      
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(GeomID,"%s",Next); 
+             
+          }
+          
+          else {
+             
+             sprintf(GeomID,"%s",Name);
+             
+          }
+          
+          if ( Verbose_ ) printf("Working on reading #1 vertical slice for body: %d --> %s ... SymFlag: %d and Component ID: %s \n",BodySet,Name,ReadInThisBody[i],GeomID); fflush(NULL);
+                            
           VSP_Surface(Surface).ReadBodyDataFromFile(Name,3,VSP_Degen_File);    
           
+          if ( strcmp(LastGeomID,GeomID) != 0 ) ComponentID++;
+          
+          sprintf(LastGeomID,"%s",GeomID);
+          
+          VSP_Surface(Surface).ComponentID() = ComponentID;          
        } 
        
        // Load in the vertical slices
@@ -778,11 +935,31 @@ void VSP_GEOM::Read_VSP_Degen_File(char *FileName)
                
           Surface++;
                       
-          sscanf(DumChar,"%4s,%s",Type,Name);
-   
-          if ( Verbose_ ) printf("Working on reading vertical slice for body: %d --> %s \n",BodySet,Name);
+          Next = strtok(DumChar,Comma); Next[strcspn(Next, "\n")] = 0;  sprintf(Type,"%s",Next);            
+          Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(Name,"%s",Next);    
+          
+          if ( GeomIDFlags ) {
+                           
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;      
+             Next = strtok(NULL,Comma);    Next[strcspn(Next, "\n")] = 0;  sprintf(GeomID,"%s",Next); 
+
+          }
+          
+          else {
+             
+             sprintf(GeomID,"%s",Name);
+             
+          }
+          
+          if ( Verbose_ ) printf("Working on reading #2 vertical slice for body: %d --> %s ... SymFlag: %d and Component ID: %s \n",BodySet,Name,ReadInThisBody[i],GeomID); fflush(NULL);
                  
           VSP_Surface(Surface).ReadBodyDataFromFile(Name,4,VSP_Degen_File);    
+          
+          if ( strcmp(LastGeomID,GeomID) != 0 ) ComponentID++;
+          
+          sprintf(LastGeomID,"%s",GeomID);
+          
+          VSP_Surface(Surface).ComponentID() = ComponentID;   
           
        }
           
@@ -900,9 +1077,9 @@ void VSP_GEOM::MeshGeom(void)
           
              Grid().KuttaNode(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().KuttaNode(i) + NodeOffSet;
              
-             Grid().WingSurface(NumberOfKuttaNodes) = Surface;
+             Grid().WingSurfaceForKuttaNode(NumberOfKuttaNodes) = Surface;
              
-             Grid().WingSurfaceIsPeriodic(NumberOfKuttaNodes) = 0;
+             Grid().WingSurfaceForKuttaNodeIsPeriodic(NumberOfKuttaNodes) = 0;
    
              Grid().WakeTrailingEdgeX(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WakeTrailingEdgeX(i);
              Grid().WakeTrailingEdgeY(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WakeTrailingEdgeY(i);
@@ -914,9 +1091,9 @@ void VSP_GEOM::MeshGeom(void)
              
              Grid().KuttaNode(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().KuttaNode(i) + NodeOffSet;
              
-             Grid().WingSurface(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WingSurface(i);
+             Grid().WingSurfaceForKuttaNode(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WingSurfaceForKuttaNode(i);
              
-             Grid().WingSurfaceIsPeriodic(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WingSurfaceIsPeriodic(i);
+             Grid().WingSurfaceForKuttaNodeIsPeriodic(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WingSurfaceForKuttaNodeIsPeriodic(i);
    
              Grid().WakeTrailingEdgeX(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WakeTrailingEdgeX(i);
              Grid().WakeTrailingEdgeY(NumberOfKuttaNodes) = VSP_Surface(Surface).Grid().WakeTrailingEdgeY(i);
@@ -957,7 +1134,7 @@ void VSP_GEOM::MeshGeom(void)
              Grid().EdgeList(i).IsLeadingEdge()  = VSP_Surface(Surface).Grid().EdgeList(i).IsLeadingEdge();
              
              Grid().EdgeList(i).EdgeType()       = VSP_Surface(Surface).Grid().EdgeList(i).EdgeType();
-   
+
           }
          
        }
@@ -975,7 +1152,7 @@ void VSP_GEOM::MeshGeom(void)
     }
     
     Grid().MinLoopArea() = AreaTotal/200.;
-    
+   
     printf("Total NumberOfNodes:      %d \n",Grid().NumberOfNodes());
     printf("Total NumberOfLoops:      %d \n",Grid().NumberOfLoops());
     printf("Total NumberOfEdges:      %d \n",Grid().NumberOfEdges());
@@ -1026,7 +1203,9 @@ void VSP_GEOM::MeshGeom(void)
        
        else {
           
-          printf("Stopped aggloemeration at.... Grid:%d --> # loops: %10d ...# Edges: %10d  \n",i,Grid_[i]->NumberOfLoops(),Grid_[i]->NumberOfEdges());
+          printf("Stopped agglomeration at.... Grid:%d --> # loops: %10d ...# Edges: %10d  \n",i,Grid_[i]->NumberOfLoops(),Grid_[i]->NumberOfEdges());
+          
+          if ( Grid_[i]->NumberOfLoops() == Grid_[i-1]->NumberOfLoops() ) i--;
           
           Done = 1;
           
@@ -1038,6 +1217,10 @@ void VSP_GEOM::MeshGeom(void)
 
     printf("NumberOfGridLevels_: %d \n",NumberOfGridLevels_);    
     
+    // Ouput the coarse grid mesh info
+    
+    if ( Verbose_ ) OutputCoarseGridInfo();
+
     // Find vortex loops lying within any control surface regions
     
     FindControlSurfaceVortexLoops();
@@ -1067,7 +1250,7 @@ void VSP_GEOM::AgglomerateMeshes(void)
 
 /*##############################################################################
 #                                                                              #
-#                     VSP_SOLVER FindControlSurfaceVortexLoops                 #
+#                     VSP_GEOM FindControlSurfaceVortexLoops                   #
 #                                                                              #
 ##############################################################################*/
 
@@ -1138,4 +1321,72 @@ void VSP_GEOM::FindControlSurfaceVortexLoops(void)
  
 }
 
+/*##############################################################################
+#                                                                              #
+#                           VSP_GEOM OutputCoarseGridInfo                      #
+#                                                                              #
+##############################################################################*/
+
+void VSP_GEOM::OutputCoarseGridInfo(void)
+{
+
+    int i, j, NumberOfLoops, Loop, Edge, Level;
+
+    Level = NumberOfGridLevels_;
+
+    for ( i = 1 ; i <= Grid(Level).NumberOfLoops() ; i++ ) {
+
+       NumberOfLoops = CalculateNumberOfFineLoops(Level, Grid(Level).LoopList(i));
+       
+       printf("Coarse loop %d contains %d fine loops \n",i,NumberOfLoops);
+       
+       for ( j = 1 ; j <= Grid(Level).LoopList(i).NumberOfEdges() ; j++ ) {
+          
+          Edge = Grid(Level).LoopList(i).Edge(j);
+          
+          Loop = Grid(Level).EdgeList(Edge).Loop1()
+               + Grid(Level).EdgeList(Edge).Loop2() - i;
+                
+          printf("   Boundary Loop: %d: %d ... pairs: %d %d\n",j,Loop,
+          Grid(Level).EdgeList(Edge).Loop1(),
+          Grid(Level).EdgeList(Edge).Loop2());
+          
+       }
+
+    }
+
+}
+
+/*##############################################################################
+#                                                                              #
+#                       VSP_GEOM CalculateNumberOfFineLoops                    #
+#                                                                              #
+##############################################################################*/
+
+int VSP_GEOM::CalculateNumberOfFineLoops(int Level, VSP_LOOP &Loop)
+{
+
+    int i, FineLoops;
+
+    FineLoops = 0;
+    
+    if ( Level == 2 ) {
+
+       FineLoops = Loop.NumberOfFineGridLoops();
+
+    }
+    
+    else {
+       
+       for ( i = 1 ; i <= Loop.NumberOfFineGridLoops() ; i++ ) {
+    
+          FineLoops += CalculateNumberOfFineLoops(Level-1,Grid(Level-1).LoopList(Loop.FineGridLoop(i)));
+
+       }
+       
+    }
+    
+    return FineLoops;
+
+}
 

@@ -187,6 +187,10 @@ GL_VIEWER::GL_VIEWER(int x,int y,int w,int h,const char *l) : Fl_Gl_Window(x,y,w
     
     UserSelectedSolutionCase_ = 1;
     
+    // User sets the plot limits
+    
+    UserSetPlotLimits = 0;
+    
 }
 
 /*##############################################################################
@@ -622,7 +626,17 @@ void GL_VIEWER::LoadMeshData(void)
          
        for ( i = 1 ; i <= NumberOfCourseEdgesForLevel[Level] ; i++ ) {
  
-          BIO.fread(&(CoarseEdgeList[Level][i].SurfaceID), i_size, 1, adb_file);       
+          BIO.fread(&(CoarseEdgeList[Level][i].SurfaceID), i_size, 1, adb_file);   
+          
+          CoarseEdgeList[Level][i].IsBoundaryEdge = 0;
+          
+          if ( CoarseEdgeList[Level][i].SurfaceID < 0 ) {
+             
+             CoarseEdgeList[Level][i].SurfaceID = -CoarseEdgeList[Level][i].SurfaceID;
+             
+             CoarseEdgeList[Level][i].IsBoundaryEdge = 1;    
+             
+          }
         
           BIO.fread(&(CoarseEdgeList[Level][i].node1), i_size, 1, adb_file);       
           BIO.fread(&(CoarseEdgeList[Level][i].node2), i_size, 1, adb_file);       
@@ -630,6 +644,13 @@ void GL_VIEWER::LoadMeshData(void)
           CoarseEdgeList[Level][i].IsKuttaEdge = 0;
           
        }
+       
+       for ( i = 1 ; i <= NumberOfCourseEdgesForLevel[Level] ; i++ ) {
+
+          CoarseNodeList[Level][CoarseEdgeList[Level][i].node1].SurfID = CoarseEdgeList[Level][i].SurfaceID;
+          CoarseNodeList[Level][CoarseEdgeList[Level][i].node2].SurfID = CoarseEdgeList[Level][i].SurfaceID;    
+
+       }       
     
     }    
     
@@ -838,7 +859,7 @@ void GL_VIEWER::LoadSolutionData(void)
 
     LoadExistingSolutionData(UserSelectedSolutionCase_);
 
-    FindSolutionMinMax();
+    if ( !UserSetPlotLimits ) FindSolutionMinMax();
 
 }
 
@@ -882,7 +903,7 @@ void GL_VIEWER::LoadExistingSolutionData(int Case)
        exit(1);
 
     } 
-    
+
     // Read in the default text string to check on endianess
 
     BIO.fread(&DumInt, i_size, 1, adb_file);
@@ -900,7 +921,7 @@ void GL_VIEWER::LoadExistingSolutionData(int Case)
     // Set the file position to the top of the temperature data
 
     fsetpos(adb_file, &StartOfWallTemperatureData);
-    
+
     for ( p = 1 ; p <= Case ; p++ ) {  
    
        // Read in the EdgeMach, Q, and Alpha lists
@@ -923,7 +944,7 @@ void GL_VIEWER::LoadExistingSolutionData(int Case)
        // Read in the wake location data
        
        BIO.fread(&(NumberOfTrailingVortexEdges_), i_size, 1, adb_file); // Number of trailing wake vortices
-   
+  
        XWake_ = new float*[NumberOfTrailingVortexEdges_ + 1];
        YWake_ = new float*[NumberOfTrailingVortexEdges_ + 1];
        ZWake_ = new float*[NumberOfTrailingVortexEdges_ + 1];
@@ -941,7 +962,7 @@ void GL_VIEWER::LoadExistingSolutionData(int Case)
              BIO.fread(&(XWake_[i][j]), f_size, 1, adb_file); // X
              BIO.fread(&(YWake_[i][j]), f_size, 1, adb_file); // Y
              BIO.fread(&(ZWake_[i][j]), f_size, 1, adb_file); // Z
-             
+
              XWake_[i][j] -= GeometryXShift;
              YWake_[i][j] -= GeometryYShift;
              ZWake_[i][j] -= GeometryZShift;
@@ -958,17 +979,15 @@ void GL_VIEWER::LoadExistingSolutionData(int Case)
        CurrentChoiceAlpha = 1;
        CurrentChoiceBeta  = 1;
        
-    }
+       // Read in any control surface deflection data
+   
+       for ( i = 1 ; i <= NumberOfControlSurfaces ; i++ ) {
+   
+          BIO.fread(&(ControlSurface[i].DeflectionAngle), f_size, 1, adb_file); 
+
+       }       
     
-    // Read in any control surface deflection data
-
-    for ( i = 1 ; i <= NumberOfControlSurfaces ; i++ ) {
-
-       BIO.fread(&(ControlSurface[i].DeflectionAngle), f_size, 1, adb_file); 
-       
-       printf("ControlSurface[%d].DeflectionAngle: %f \n",i,ControlSurface[i].DeflectionAngle);
-  
-    }       
+    }
     
     // Close the adb file
 
@@ -989,7 +1008,7 @@ void GL_VIEWER::RotateControlSurfaceNode( float xyz[3], int ConSurf )
    
     // Rotate point about control surface hinge line
 
-    Quat.FormRotationQuat_f((float*)ControlSurface[ConSurf].HingeVec,(float)ControlSurface[ConSurf].DeflectionAngle);
+    Quat.FormRotationQuat(ControlSurface[ConSurf].HingeVec,ControlSurface[ConSurf].DeflectionAngle);
 
     InvQuat = Quat;
 
@@ -1631,8 +1650,8 @@ void GL_VIEWER::FindSolutionMinMax(void)
     }
     
     else {
-       
-       CpMin = CpMinSoln;
+
+       CpMin = MAX(Avg - 2. * StdDev, CpMinActual);
        CpMax = CpMaxSoln;
        
     }
@@ -1651,6 +1670,8 @@ void GL_VIEWER::SetSolutionMin(float MinVal)
     int i;
 
     if ( DrawCpIsOn ) CpMin = MinVal;
+    
+    UserSetPlotLimits = 1;
 
 }
 
@@ -1666,6 +1687,8 @@ void GL_VIEWER::SetSolutionMax(float MaxVal)
     int i;
 
     if ( DrawCpIsOn ) CpMax = MaxVal;
+    
+    UserSetPlotLimits = 1;
 
 }
 
@@ -2254,6 +2277,12 @@ void GL_VIEWER::Draw(void)
     GLfloat ambient1[] = { 1.0f*Brightness, 1.0f*Brightness, 1.0f*Brightness, 1.0f };
     GLfloat ambient2[] = { 1.0f*Brightness, 1.0f*Brightness, 1.0f*Brightness, 1.0f };
    
+ //   GLfloat ambient1[] = { 2.0f*Brightness, 2.0f*Brightness, 2.0f*Brightness, 1.0f };
+ //   GLfloat ambient2[] = { 2.0f*Brightness, 2.0f*Brightness, 2.0f*Brightness, 1.0f };
+
+    GLfloat ambient3[] = { 2.0f*Brightness, 2.0f*Brightness, 2.0f*Brightness, 1.0f };
+    GLfloat ambient4[] = { 2.0f*Brightness, 2.0f*Brightness, 2.0f*Brightness, 1.0f };
+       
     // Enable Lighting
 
     glEnable(GL_LIGHTING);
@@ -2368,6 +2397,8 @@ void GL_VIEWER::Draw(void)
           if ( DrawAxesIsOn               ) DrawAxes();
 
           if ( DrawControlSurfacesIsOn    ) DrawControlSurfaces();
+          
+
           
        }
 
@@ -2829,7 +2860,25 @@ void GL_VIEWER::DrawWireFrame(void)
              glVertex3fv(vec3);
    
           glEnd();
+          
+          if ( DrawReflectedGeometryIsOn ) {
 
+             vec1[1] = -(vec1[1] + GeometryYShift) - GeometryYShift;
+             vec2[1] = -(vec2[1] + GeometryYShift) - GeometryYShift;
+             vec3[1] = -(vec3[1] + GeometryYShift) - GeometryYShift;
+
+             glBegin(GL_TRIANGLES);
+
+                glVertex3fv(vec1);
+
+                glVertex3fv(vec2);
+
+                glVertex3fv(vec3);
+
+             glEnd();
+   
+		     }
+        
        }
 
     }
@@ -2873,8 +2922,8 @@ void GL_VIEWER::DrawCoarseMeshEdgesForLevel(int Level)
     for ( j = 1 ; j <= NumberOfCourseEdgesForLevel[Level]; j++ ) {
 
       SurfaceID = CoarseEdgeList[Level][j].SurfaceID;
- 
-      if ( SurfaceID == 999 ) {
+
+      if ( CoarseEdgeList[Level][j].IsBoundaryEdge && !CoarseEdgeList[Level][j].IsKuttaEdge) {
 
           rgb[0] = 1.;
           rgb[1] = 0.;
@@ -2907,28 +2956,54 @@ void GL_VIEWER::DrawCoarseMeshEdgesForLevel(int Level)
           glColor3fv(rgb);         
          
       }         
-         
-         
+                  
       if ( !DrawOnlySelectedIsOn || DrawOnlySelectedIsOn + PanelComGeomTagsBrowser->selected(ComGeom2PanelTag[SurfaceID]) == 2 ) {
 
+       glBegin(GL_LINES);
+
+          node1 = CoarseEdgeList[Level][j].node1;
+          node2 = CoarseEdgeList[Level][j].node2;
+
+          vec[0] = CoarseNodeList[Level][node1].x;
+          vec[1] = CoarseNodeList[Level][node1].y;
+          vec[2] = CoarseNodeList[Level][node1].z;
+
+          glVertex3fv(vec);
+
+          vec[0] = CoarseNodeList[Level][node2].x;
+          vec[1] = CoarseNodeList[Level][node2].y;
+          vec[2] = CoarseNodeList[Level][node2].z;
+
+          glVertex3fv(vec);
+
+       glEnd();
+       
+       if ( DrawReflectedGeometryIsOn ) {
+
           glBegin(GL_LINES);
-   
+
              node1 = CoarseEdgeList[Level][j].node1;
              node2 = CoarseEdgeList[Level][j].node2;
 
              vec[0] = CoarseNodeList[Level][node1].x;
              vec[1] = CoarseNodeList[Level][node1].y;
              vec[2] = CoarseNodeList[Level][node1].z;
-   
+             
+             vec[1] = -(vec[1] + GeometryYShift) - GeometryYShift;
+             
              glVertex3fv(vec);
-   
+
              vec[0] = CoarseNodeList[Level][node2].x;
              vec[1] = CoarseNodeList[Level][node2].y;
              vec[2] = CoarseNodeList[Level][node2].z;
-   
-             glVertex3fv(vec);
-   
+             
+             vec[1] = -(vec[1] + GeometryYShift) - GeometryYShift;
+             
+             glVertex3fv(vec);                
+          
           glEnd();
+
+        }          
           
       }
 
@@ -2964,17 +3039,35 @@ void GL_VIEWER::DrawCoarseMeshNodesForLevel(int Level)
     glColor3fv(rgb);
     
     for ( j = 1 ; j <= NumberOfCourseNodesForLevel[Level]; j++ ) {
+       
+       SurfID = CoarseNodeList[Level][j].SurfID;
+       
+       if ( !DrawOnlySelectedIsOn || DrawOnlySelectedIsOn + PanelComGeomTagsBrowser->selected(ComGeom2PanelTag[SurfID]) == 2 ) {
 
-       vec[0] = CoarseNodeList[Level][j].x;
-       vec[1] = CoarseNodeList[Level][j].y;
-       vec[2] = CoarseNodeList[Level][j].z;
+          vec[0] = CoarseNodeList[Level][j].x;
+          vec[1] = CoarseNodeList[Level][j].y;
+          vec[2] = CoarseNodeList[Level][j].z;
+             
+          glBegin(GL_POINTS);
+   
+             glVertex3fv(vec);
+   
+          glEnd();
           
-       glBegin(GL_POINTS);
+          if ( DrawReflectedGeometryIsOn ) {
+   
+             glBegin(GL_POINTS);
+   
+                vec[1] = -(vec[1] + GeometryYShift) - GeometryYShift;
+    
+                glVertex3fv(vec);                
+             
+             glEnd();
 
-          glVertex3fv(vec);
-
-       glEnd();
-
+           }   
+           
+       }
+   
     }
     
     glEnable(GL_LIGHTING);
@@ -3031,6 +3124,26 @@ void GL_VIEWER::DrawWakes(void)
              }
              
           glEnd();
+          
+          if ( DrawReflectedGeometryIsOn ) {
+   
+             glBegin(GL_LINE_STRIP);
+              
+                for ( j = 1 ; j <= NumberNodes; j++ ) {
+
+                   vec[0] = XWake_[i][j];
+                   vec[1] = YWake_[i][j];
+                   vec[2] = ZWake_[i][j];
+                
+                   vec[1] = -(vec[1] + GeometryYShift) - GeometryYShift;
+                
+                   glVertex3fv(vec);
+   
+                }
+             
+             glEnd();
+   
+           }             
               
        }
 
@@ -3263,20 +3376,20 @@ void GL_VIEWER::DrawShadedSurface(void)
 
     // Modify lighting for just simple shaded surface... brighten up things some
 
-    glEnable(GL_LIGHTING);
+/*    glEnable(GL_LIGHTING);
     glEnable(GL_LIGHT0);
     glEnable(GL_LIGHT1);
     glLightModeli(GL_LIGHT_MODEL_TWO_SIDE, GL_FALSE);
     glLightfv(GL_LIGHT0,GL_DIFFUSE,ambient3);
     glLightfv(GL_LIGHT1,GL_DIFFUSE,ambient4);
-
+*/
     glShadeModel(GL_SMOOTH);
 
     // Draw triangles as shaded surface
 
-    rgb[0] = 0.5;
-    rgb[1] = 0.5;
-    rgb[2] = 0.5;
+    rgb[0] = 0.9;
+    rgb[1] = 0.9;
+    rgb[2] = 0.9;
     rgb[3] = 1.;
 
     glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
@@ -3324,9 +3437,9 @@ void GL_VIEWER::DrawShadedSurface(void)
 
           if ( LastTri != SRF_TRI ) {
 
-             rgb[0] = 0.55;
-             rgb[1] = 0.55;
-             rgb[2] = 0.55;
+             rgb[0] = 0.9;
+             rgb[1] = 0.9;
+             rgb[2] = 0.9;
              rgb[3] = 1.00;
 
              glMaterialfv(GL_FRONT_AND_BACK,GL_AMBIENT,rgb);
@@ -3460,6 +3573,8 @@ void GL_VIEWER::DrawShadedSurface(void)
        }
 
     }
+
+    if ( DrawXPlaneIsOn || DrawYPlaneIsOn || DrawZPlaneIsOn ) DrawSymmetryPlane();
 
     glDisable(GL_POLYGON_OFFSET_FILL);
 
@@ -3769,6 +3884,8 @@ void GL_VIEWER::DrawShadedSolutionPerTri(float *Function, float FMin, float FMax
 
     }
 
+    if ( DrawXPlaneIsOn || DrawYPlaneIsOn || DrawZPlaneIsOn ) DrawSymmetryPlane();
+
     glDisable(GL_POLYGON_OFFSET_FILL);
 
 }
@@ -4027,6 +4144,8 @@ void GL_VIEWER::DrawShadedSolutionPerNode(float *Function, float FMin, float FMa
 
     }
 
+    if ( DrawXPlaneIsOn || DrawYPlaneIsOn || DrawZPlaneIsOn ) DrawSymmetryPlane();
+
     glDisable(GL_POLYGON_OFFSET_FILL);
 
 }
@@ -4040,7 +4159,17 @@ void GL_VIEWER::DrawShadedSolutionPerNode(float *Function, float FMin, float FMa
 void GL_VIEWER::DrawCp(void)
 {
 
-    sprintf(LegendTitle,"Delta-Cp");
+    if ( ModelType == VLM_MODEL ) {
+    
+       sprintf(LegendTitle,"Delta-Cp");
+       
+    }
+    
+    else {
+       
+       sprintf(LegendTitle,"Cp");
+       
+    }
 
     LegendMin = CpMin;
     LegendMax = CpMax;
@@ -4082,6 +4211,11 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
     rgb[2] = 0.5;
     rgb[3] = 0.5;
     
+    rgb[0] = 0.7;
+    rgb[1] = 0.3;
+    rgb[2] = 0.7;
+    rgb[3] = 0.5;    
+    
     glMaterialfv(GL_FRONT_AND_BACK,GL_AMBIENT,rgb);
     glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,rgb);
     glMaterialfv(GL_FRONT_AND_BACK,GL_SHININESS,rgb);
@@ -4093,41 +4227,70 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
     
     for ( i = 1 ; i <= NumberOfPropulsionElements ; i++ ) {
      
-         PropulsionElement[i].Rotor.CalculateRotorGeometry();
-       
-          // Loop over nodes defining the tips of each rotor and draw the rotor disk
+       PropulsionElement[i].Rotor.CalculateRotorGeometry();
+    
+       // Loop over nodes defining the tips of each rotor and draw the rotor disk
+     
+       for ( j = 1 ; j < NUM_ROTOR_NODES ; j++ ) {
+
+          glBegin(GL_TRIANGLES);
+
+             glNormal3f( -PropulsionElement[i].Rotor.Normal(0),
+                         -PropulsionElement[i].Rotor.Normal(1),
+                         -PropulsionElement[i].Rotor.Normal(2) );
+
+             vec[0] = PropulsionElement[i].Rotor.XYZ(0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.XYZ(1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.XYZ(2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,2) - GeometryZShift;
+      
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,2) - GeometryZShift;
+      
+             glVertex3fv(vec);
+
+          glEnd();
         
-          for ( j = 1 ; j < NUM_ROTOR_NODES ; j++ ) {
+          if ( DrawReflectedGeometryIsOn ) {
 
              glBegin(GL_TRIANGLES);
-
+             
                 glNormal3f( -PropulsionElement[i].Rotor.Normal(0),
                             -PropulsionElement[i].Rotor.Normal(1),
                             -PropulsionElement[i].Rotor.Normal(2) );
-
+   
                 vec[0] = PropulsionElement[i].Rotor.XYZ(0) - GeometryXShift;;
-                vec[1] = PropulsionElement[i].Rotor.XYZ(1) - GeometryYShift;;
+                vec[1] = -PropulsionElement[i].Rotor.XYZ(1) - GeometryYShift;;
                 vec[2] = PropulsionElement[i].Rotor.XYZ(2) - GeometryZShift;;
 
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,0) - GeometryXShift;;
-                vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;;
+                vec[1] = -PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;;
                 vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,2) - GeometryZShift;;
-         
+  
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,0) - GeometryXShift;;
-                vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;;
+                vec[1] = -PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;;
                 vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,2) - GeometryZShift;;
-         
+  
                 glVertex3fv(vec);
-
-             glEnd();
-
-          }
-         
-       
+                
+             glEnd();             
+             
+          }  
+          
+       }
+     
     }
     
     if ( DrawWithWhiteBackgroundIsOn ) {
@@ -4154,27 +4317,48 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
 
     for ( i = 1 ; i <= NumberOfPropulsionElements ; i++ ) {
 
-          // Now outline the rotor, indicating the direction of rotation
-          
-          for ( j = 1 ; j < NUM_ROTOR_NODES ; j++ ) {
+       // Now outline the rotor, indicating the direction of rotation
+       
+       for ( j = 1 ; j < NUM_ROTOR_NODES ; j++ ) {
+
+          glBegin(GL_LINES);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,2) - GeometryZShift;
+      
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,2) - GeometryZShift;
+      
+             glVertex3fv(vec);
+             
+          glEnd();
+                  
+          if ( DrawReflectedGeometryIsOn ) {
 
              glBegin(GL_LINES);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j  ,2) - GeometryZShift;
          
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorRadiusXYZ(j+1,2) - GeometryZShift;
          
                 glVertex3fv(vec);
                 
              glEnd();
+              
+          }
+                       
 
-          }       
+       }       
  
     }
     
@@ -4182,8 +4366,122 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
     
     for ( i = 1 ; i <= NumberOfPropulsionElements ; i++ ) {
     
-          glBegin(GL_TRIANGLES);
+       glBegin(GL_TRIANGLES);
 
+             // Triangle 1
+          
+             glNormal3f( PropulsionElement[i].Rotor.RotorDirectionVectorNormal(1,0),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(1,1),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(1,2) );
+          
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
+             
+             glVertex3fv(vec);
+             
+       glEnd();
+             
+       glBegin(GL_TRIANGLES);             
+             
+             // Triangle 2
+           
+             glNormal3f( PropulsionElement[i].Rotor.RotorDirectionVectorNormal(2,0),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(2,1),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(2,2) );
+           
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
+             
+             glVertex3fv(vec);             
+
+       glEnd();
+             
+       glBegin(GL_TRIANGLES);       
+       
+             // Triangle 3
+     
+             glNormal3f( PropulsionElement[i].Rotor.RotorDirectionVectorNormal(3,0),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(3,1),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(3,2) );
+     
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
+             
+             glVertex3fv(vec);             
+      
+       glEnd();
+             
+       glBegin(GL_TRIANGLES);       
+         
+             // Triangle 4
+           
+             glNormal3f( PropulsionElement[i].Rotor.RotorDirectionVectorNormal(4,0),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(4,1),
+                         PropulsionElement[i].Rotor.RotorDirectionVectorNormal(4,2) );
+           
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
+
+             glVertex3fv(vec);
+
+             vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
+             vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+             vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
+             
+             glVertex3fv(vec);             
+                          
+       glEnd(); 
+       
+       if ( DrawReflectedGeometryIsOn ) {
+       
+          glBegin(GL_TRIANGLES);
+   
                 // Triangle 1
              
                 glNormal3f( PropulsionElement[i].Rotor.RotorDirectionVectorNormal(1,0),
@@ -4191,19 +4489,19 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
                             PropulsionElement[i].Rotor.RotorDirectionVectorNormal(1,2) );
              
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
                 
                 glVertex3fv(vec);
@@ -4219,23 +4517,23 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
                             PropulsionElement[i].Rotor.RotorDirectionVectorNormal(2,2) );
               
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
                 
                 glVertex3fv(vec);             
-
+   
           glEnd();
                 
           glBegin(GL_TRIANGLES);       
@@ -4247,19 +4545,19 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
                             PropulsionElement[i].Rotor.RotorDirectionVectorNormal(3,2) );
         
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(2,2) - GeometryZShift;
                 
                 glVertex3fv(vec);             
@@ -4275,25 +4573,27 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
                             PropulsionElement[i].Rotor.RotorDirectionVectorNormal(4,2) );
               
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(1,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(3,2) - GeometryZShift;
-
+   
                 glVertex3fv(vec);
-
+   
                 vec[0] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,0) - GeometryXShift;
-                vec[1] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
+                vec[1] = -PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,1) - GeometryYShift;
                 vec[2] = PropulsionElement[i].Rotor.RotorDirectionVectorXYZ(4,2) - GeometryZShift;
                 
                 glVertex3fv(vec);             
                              
-          glEnd(); 
-       
+          glEnd();   
+          
+       }     
+                                  
     }
  
 }
@@ -4304,7 +4604,7 @@ void GL_VIEWER::DrawRotorSurfacesShaded(void)
 #                                                                              #
 ##############################################################################*/
 
-void GL_VIEWER::DrawCGMarker()
+void GL_VIEWER::DrawCGMarker(void)
 {
 
     static float zero[3]  = { 0.0,    0.0,   0.0};
@@ -4429,6 +4729,207 @@ void GL_VIEWER::DrawCGMarker()
 
 }
 
+/*##############################################################################
+#                                                                              #
+#                         GL_VIEWER DrawSymmetryPlane                          #
+#                                                                              #
+##############################################################################*/
+
+void GL_VIEWER::DrawSymmetryPlane(void)
+{
+
+    float Scale, InvScale, dalpha, alpha;
+
+    int i, j, node1, node2, node3, LastTri, LastCon, LastSurface;
+    int LastMaterialType, SurfaceID, SurfID;
+    float vec1[3], vec2[3], vec3[3], vec4[3], Normal[3], rgb[4], LastEmissivity;
+    float xyz1[3], xyz2[3];
+
+    glTranslatef( 0. - GeometryXShift,
+                  0. - GeometryYShift,
+                  0. - GeometryZShift);
+
+    // Draw triangles as shaded surface
+
+    rgb[0] = 0.7;
+    rgb[1] = 0.7;
+    rgb[2] = 0.7;
+    rgb[3] = 1.;
+
+    glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
+
+    glMaterialfv(GL_FRONT_AND_BACK,GL_AMBIENT,rgb);
+    glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,rgb);
+    glMaterialfv(GL_FRONT_AND_BACK,GL_SHININESS,rgb);
+    glColor3fv(rgb);
+
+    if ( DrawXPlaneIsOn ) {
+       
+       vec1[0] =         0;
+       vec1[1] = -ViewSize + GeometryYShift;
+       vec1[2] =  ViewSize + GeometryZShift;
+       
+       vec2[0] =         0;
+       vec2[1] = -ViewSize + GeometryYShift;
+       vec2[2] = -ViewSize + GeometryZShift;
+       
+       vec3[0] =         0;
+       vec3[1] =  ViewSize + GeometryYShift;
+       vec3[2] = -ViewSize + GeometryZShift;
+       
+       vec4[0] =         0;
+       vec4[1] =  ViewSize + GeometryYShift;
+       vec4[2] =  ViewSize + GeometryZShift;
+       
+       Normal[0] = 1.;
+       Normal[1] = 0.;
+       Normal[2] = 0.;
+       
+    }
+
+    else if ( DrawYPlaneIsOn ) {
+       
+       vec1[0] = -ViewSize + GeometryXShift;
+       vec1[1] =        0.;
+       vec1[2] =  ViewSize + GeometryZShift;
+       
+       vec2[0] =  ViewSize + GeometryXShift;
+       vec2[1] =        0.;
+       vec2[2] =  ViewSize + GeometryZShift;
+       
+       vec3[0] =  ViewSize + GeometryXShift;
+       vec3[1] =        0.;
+       vec3[2] = -ViewSize + GeometryZShift;
+       
+       vec4[0] = -ViewSize + GeometryXShift;
+       vec4[1] =        0.;
+       vec4[2] = -ViewSize + GeometryZShift;
+       
+       Normal[0] = 0.;
+       Normal[1] = 1.;
+       Normal[2] = 0.;
+       
+    }
+        
+    else if ( DrawZPlaneIsOn ) {
+       
+       vec1[0] = -ViewSize + GeometryXShift;
+       vec1[1] = -ViewSize + GeometryYShift;
+       vec1[2] =         0.;
+       
+       vec2[0] = -ViewSize + GeometryXShift;
+       vec2[1] =  ViewSize + GeometryYShift;
+       vec2[2] =        0.;
+       
+       vec3[0] =  ViewSize + GeometryXShift;
+       vec3[1] =  ViewSize + GeometryYShift;
+       vec3[2] =        0.;
+       
+       vec4[0] =  ViewSize + GeometryXShift;
+       vec4[1] = -ViewSize + GeometryYShift;
+       vec4[2] =        0.;
+       
+       Normal[0] = 0.;
+       Normal[1] = 0.;
+       Normal[2] = 1.;
+       
+    }
+                
+    // Draw the plane
+              
+    glBegin(GL_TRIANGLES);
+
+       glNormal3f( Normal[0], Normal[1], Normal[2] );
+
+       glVertex3fv(vec1);
+
+       glVertex3fv(vec2);
+
+       glVertex3fv(vec3);
+       
+    glEnd();       
+    
+    glBegin(GL_TRIANGLES);
+       
+       glNormal3f( Normal[0], Normal[1], Normal[2] );
+
+       glVertex3fv(vec3);
+
+       glVertex3fv(vec4);
+
+       glVertex3fv(vec1);       
+
+    glEnd();
+    
+    // Draw some grid lines
+   
+    glPolygonMode(GL_FRONT_AND_BACK,GL_LINE);
+    glLineWidth(5.);
+    glDisable(GL_LIGHTING);    
+
+    rgb[0] = 0.;
+    rgb[1] = 0.;
+    rgb[2] = 0.;
+    rgb[3] = 1.;
+    
+    glMaterialfv(GL_FRONT_AND_BACK,GL_AMBIENT,rgb);
+    glMaterialfv(GL_FRONT_AND_BACK,GL_DIFFUSE,rgb);
+    glMaterialfv(GL_FRONT_AND_BACK,GL_SHININESS,rgb);
+    glColor3fv(rgb);    
+        
+    int NumLines = 5;
+    
+    dalpha = 1./(NumLines-1);
+    
+    for ( i = 1 ; i <= NumLines ;  i++ ) {
+    
+       alpha = (i-1)*dalpha;
+       
+       xyz1[0] = vec1[0] + alpha*(vec2[0] - vec1[0]);
+       xyz1[1] = vec1[1] + alpha*(vec2[1] - vec1[1]);
+       xyz1[2] = vec1[2] + alpha*(vec2[2] - vec1[2]);
+       
+       xyz2[0] = vec4[0] + alpha*(vec3[0] - vec4[0]);
+       xyz2[1] = vec4[1] + alpha*(vec3[1] - vec4[1]);
+       xyz2[2] = vec4[2] + alpha*(vec3[2] - vec4[2]);
+
+       glBegin(GL_LINES);
+       
+          glVertex3fv(xyz1);
+          glVertex3fv(xyz2);
+          
+       glEnd();
+       
+    }
+    
+    for ( i = 1 ; i <= NumLines ;  i++ ) {
+    
+       alpha = (i-1)*dalpha;
+       
+       xyz1[0] = vec1[0] + alpha*(vec4[0] - vec1[0]);
+       xyz1[1] = vec1[1] + alpha*(vec4[1] - vec1[1]);
+       xyz1[2] = vec1[2] + alpha*(vec4[2] - vec1[2]);
+       
+       xyz2[0] = vec2[0] + alpha*(vec3[0] - vec2[0]);
+       xyz2[1] = vec2[1] + alpha*(vec3[1] - vec2[1]);
+       xyz2[2] = vec2[2] + alpha*(vec3[2] - vec2[2]);
+
+       glBegin(GL_LINES);
+       
+          glVertex3fv(xyz1);
+          glVertex3fv(xyz2);
+          
+       glEnd();
+       
+    }    
+    
+    glEnable(GL_LIGHTING);
+
+    glTranslatef( 0. + GeometryXShift,
+                  0. + GeometryYShift,
+                  0. + GeometryZShift);     
+  
+}
 
 /*##############################################################################
 #                                                                              #
@@ -4436,7 +4937,7 @@ void GL_VIEWER::DrawCGMarker()
 #                                                                              #
 ##############################################################################*/
 
-void GL_VIEWER::DrawAxes()
+void GL_VIEWER::DrawAxes(void)
 {
 
     static float zero[3]  = { 0.0,   0.0,   0.0};
@@ -4474,9 +4975,9 @@ void GL_VIEWER::DrawAxes()
     glEnd();
  
     glScalef(InvScale, InvScale, InvScale);
-    glTranslatef( -(Xcg - GeometryXShift),
-                  -(Ycg - GeometryYShift),
-                  -(Zcg - GeometryZShift));
+    glTranslatef( -(0. - GeometryXShift),
+                  -(0. - GeometryYShift),
+                  -(0. - GeometryZShift));
 
     glLineWidth(1);
     glEnable(GL_LIGHTING);

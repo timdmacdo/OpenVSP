@@ -77,6 +77,29 @@ public:
 
 };
 
+class CpSlice : public ParmContainer
+{
+public:
+
+    CpSlice();
+    ~CpSlice();
+
+    void ParmChanged( Parm* parm_ptr, int type );
+
+    void LoadDrawObj( vector < DrawObj* > &draw_obj_vec, int id, bool highlight );
+
+    IntParm m_CutType;
+    Parm m_CutPosition;
+    BoolParm m_DrawCutFlag;
+
+private:
+
+    VspSurf CreateSurf();
+
+    vector < DrawObj > m_CpSliceDOVec;
+
+};
+
 class ControlSurfaceGroup : public ParmContainer
 {
 public:
@@ -157,7 +180,6 @@ public:
     void UpdateControlSurfaceGroups();
     void CleanCompleteControlSurfVec();
     void UpdateCompleteControlSurfVec();         // initializes one group per surface
-    void UpdateUngroupedVec();
     void UpdateActiveControlSurfVec();
     void UpdateBBox( vector < DrawObj* > & draw_obj_vec );
     void UpdateHighlighted( vector < DrawObj* > & draw_obj_vec );
@@ -172,7 +194,7 @@ public:
     int GetCurrentRotorDiskIndex()                          { return m_CurrentRotorDiskIndex; }
     vector <RotorDisk*> GetRotorDiskVec()                      { return m_RotorDiskVec; };
     vector < VspAeroControlSurf > GetActiveCSVec()          { return m_ActiveControlSurfaceVec; }
-    vector < VspAeroControlSurf > GetUngroupedCSVec()        { return m_UngroupedCS; }
+    vector < VspAeroControlSurf > GetCompleteCSVec()        { return m_CompleteControlSurfaceVec; }
     int GetCurrentCSGroupIndex()                            { return m_CurrentCSGroupIndex; }
     string GetCurrentCSGGroupName();
     vector <ControlSurfaceGroup* > GetControlSurfaceGroupVec()   { return m_ControlSurfaceGroupVec; }
@@ -193,6 +215,27 @@ public:
 
     IntParm m_AnalysisMethod;
 
+    // CpSlicer Functionality and Variables
+    string ComputeCpSlices( FILE * logFile = NULL );
+    string ExecuteCpSlicer( FILE * logFile = NULL );
+    void ClearCpSliceResults();
+    void CreateCutsFile();
+    void AddCpSlice( CpSlice* slice )                      { m_CpSliceVec.push_back( slice ); }
+    CpSlice* AddCpSlice();
+    bool ValidCpSliceInd( int ind );
+    void DelCpSlice( int ind );
+    CpSlice* GetCpSlice( int ind );
+    int GetCpSliceIndex( const string & id );
+    void AddCpSliceVec( int cut_type, vector < double > cut_vec );
+    vector < double > GetCpSlicePosVec(int type );
+    vector < CpSlice* > GetCpSliceVec()                    { return m_CpSliceVec; }
+    void ClearCpSliceVec();
+    int GetCurrentCpSliceIndex()                           { return m_CurrentCpSliceIndex; }
+    void SetCurrentCpSliceIndex( int index )               { m_CurrentCpSliceIndex = index; }
+    int GetCpSliceAnalysisType()                           { return m_CpSliceAnalysisType; }
+
+    BoolParm m_CpSliceFlag;
+
     // Rotor Disk Functionality
     void AddRotorDisk();
     bool ValidRotorDiskIndex( int index );
@@ -206,7 +249,6 @@ public:
     void AddAllToCSGroup();
     void RemoveSelectedFromCSGroup();
     void RemoveAllFromCSGroup();
-    void RemoveFromUngrouped( const string & ssid, int reflec_num );
     void UpdateControlSurfaceGroupSuffix();
 
     virtual void AddLinkableParms( vector < string > & linkable_parm_vec, const string & link_container_id );
@@ -227,6 +269,8 @@ public:
     string m_HistoryFile;
     string m_LoadFile;
     string m_StabFile;
+    string m_CutsFile;
+    string m_SliceFile;
 
     IntParm m_GeomSet;
 
@@ -261,7 +305,10 @@ public:
     Parm m_Vinf;
     Parm m_Rho;
     Parm m_ReCref;
-    BoolParm m_JacobiPrecondition;
+    IntParm m_Precondition;
+    BoolParm m_VortexLift;
+    BoolParm m_LeadingEdgeSuction;
+    BoolParm m_KTCorrection;
     BoolParm m_Symmetry;
     BoolParm m_Write2DFEMFlag;
     BoolParm m_ClMaxToggle;
@@ -303,7 +350,20 @@ public:
     Parm m_SweepYMin;
     Parm m_SweepYMax;
 
+    BoolParm m_CpSliceXMinIsManual;
+    BoolParm m_CpSliceXMaxIsManual;
+    BoolParm m_CpSliceYMinIsManual;
+    BoolParm m_CpSliceYMaxIsManual;
+    Parm m_CpSliceXMin;
+    Parm m_CpSliceXMax;
+    Parm m_CpSliceYMin;
+    Parm m_CpSliceYMax;
+
+    BoolParm m_CpSliceYAxisFlipFlag;
+    BoolParm m_CpSlicePlotLinesFlag;
+
     ProcessUtil m_SolverProcess;
+    ProcessUtil m_SlicerThread;
 
 protected:
     DrawObj m_HighlightDrawObj;
@@ -326,7 +386,9 @@ protected:
     void ReadStabFile( string filename, vector <string> &res_id_vector, vsp::VSPAERO_ANALYSIS_METHOD analysisMethod );
     vector <string> ReadDelimLine( FILE * fp, char * delimeters );
     bool CheckForCaseHeader( std::vector<string> headerStr );
+    bool CheckForResultHeader( std::vector < string > headerstr );
     int ReadVSPAEROCaseHeader( Results * res, FILE * fp, vsp::VSPAERO_ANALYSIS_METHOD analysisMethod );
+    void ReadSliceFile( string filename, vector <string> &res_id_vector );
 
     void AddResultHeader( string res_id, double mach, double alpha, double beta, vsp::VSPAERO_ANALYSIS_METHOD analysisMethod );
 
@@ -339,13 +401,16 @@ private:
     vector< RotorDisk* > m_RotorDiskVec;
     vector< VspAeroControlSurf > m_CompleteControlSurfaceVec;   // list of all control and rectangle sub-surfaces in the model selected as control surfaces
     vector < VspAeroControlSurf > m_ActiveControlSurfaceVec;
-    vector < VspAeroControlSurf > m_UngroupedCS;
     vector< ControlSurfaceGroup* > m_ControlSurfaceGroupVec;
+    vector < CpSlice* > m_CpSliceVec;
 
     vector < DegenGeom > m_DegenGeomVec;
 
     int m_CurrentRotorDiskIndex;
     int m_CurrentCSGroupIndex;
+    int m_CurrentCpSliceIndex;
+
+    int m_CpSliceAnalysisType;
 
     bool m_Verbose;
 };

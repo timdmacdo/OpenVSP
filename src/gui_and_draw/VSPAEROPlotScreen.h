@@ -52,6 +52,7 @@ protected:
     void UpdateConvergenceAutoManualAxisLimits();
     void UpdateLoadDistAutoManualAxisLimits();
     void UpdateSweepAutoManualAxisLimits();
+    void UpdateCpSliceAutoManualAxisLimits();
     string MakeAxisLabelStr( vector <string> dataSetNames );
     void UpdateAxisLimits( Ca_Canvas * canvas, vector <double> xDoubleData, vector <double> yDoubleData, bool expand_only );
     void UpdateSingleAxisLimits( Ca_Axis_ * tAxis, vector <double> doubleData, bool expandOnly, bool keepZero = false );
@@ -149,6 +150,47 @@ protected:
     void UpdateSweepXYDataBrowser();
 
     void RedrawSweepPlot();
+
+    //==== Cp Slice Tab ====//
+    Fl_Group* m_CpSliceTab;
+    GroupLayout m_CpSliceLayout;
+    GroupLayout m_CpSliceControlLayout;
+    GroupLayout m_CpSlicePlotLayout;
+    Ca_Canvas*  m_CpSlicePlotCanvas;
+
+    GroupLayout m_CpSliceLegendLayout;
+    Fl_Scroll* m_CpSliceLegendGroup;
+
+    Fl_Browser * m_CpSliceCutBrowser;
+    vector < Choice* > m_CpSlicePosTypeChoiceVec;
+    Choice m_XCpSlicePosTypeChoice;
+    Choice m_YCpSlicePosTypeChoice;
+    Choice m_ZCpSlicePosTypeChoice;
+    Fl_Browser * m_CpSliceCaseBrowser;
+    vector< string > m_CpSliceCaseSelectedResultIDs;
+    map < int, vector < string > >  m_CpSliceCutResultIDMap;
+    vector< string > m_CpSliceCutSelectedResultIDs;
+
+    ToggleButton m_CpSliceManualXMinToggle;
+    ToggleButton m_CpSliceManualXMaxToggle;
+    ToggleButton m_CpSliceManualYMinToggle;
+    ToggleButton m_CpSliceManualYMaxToggle;
+    SliderAdjRangeInput m_CpSliceXMinSlider;
+    SliderAdjRangeInput m_CpSliceXMaxSlider;
+    SliderAdjRangeInput  m_CpSliceYMinSlider;
+    SliderAdjRangeInput  m_CpSliceYMaxSlider;
+
+    ToggleButton m_CpSliceFlipYToggle;
+    ToggleButton m_CpSlicePlotLinesToggle;
+
+    int m_NumCpCuts; // Number of CpSlice Cuts
+    int m_NumCpCases; // Number of Flow Condition Cases
+
+    void UpdateCpSliceCaseBrowser();
+    void ConstructCpSliceCaseString( char* strbuf, Results* res, int case_num = 1 );
+    void UpdateCpSliceCutBrowser();
+
+    void RedrawCpSlicePlot();
 
 };
 

@@ -15,7 +15,7 @@
 #include "Vec3d.h"
 
 #include "Mesh.h"
-#include "GridDensity.h"
+#include "SimpleMeshSettings.h"
 #include "SurfPatch.h"
 #include "MapSource.h"
 #include "SurfCore.h"
@@ -46,6 +46,7 @@ public:
     void GetBorderCurve( const vec3d &uw0, const vec3d &uw1, Bezier_curve & crv ) const;
 
     vec3d CompPnt( double u, double w ) const;
+    vec3d CompPnt01( double u, double w ) const;
 
     const SurfCore* GetSurfCore() const
     {
@@ -70,11 +71,11 @@ public:
     void ApplyES( vec3d uw, double t );
 
     vec2d ClosestUW( vec3d & pnt_in, double guess_u, double guess_w ) const;
-
+    vec2d ClosestUW( vec3d & pnt_in ) const;
 
     void FindBorderCurves();
 
-    void SetGridDensityPtr( GridDensity*  gp )
+    void SetGridDensityPtr( SimpleGridDensity*  gp )
     {
         m_GridDensityPtr = gp;
         m_Mesh.SetGridDensityPtr( gp );
@@ -129,6 +130,15 @@ public:
         return m_MainSurfID;
     }
 
+    void SetFeaPartIndex( int ind )
+    {
+        m_FeaPartIndex = ind;
+    }
+    int GetFeaPartIndex()
+    {
+        return m_FeaPartIndex;
+    }
+
     void Draw();
 
     void LoadSCurves( vector< SCurve* > & scurve_vec );
@@ -141,12 +151,12 @@ public:
         return &m_Mesh;
     }
 
-    void Intersect( Surf* surfPtr );
+    void Intersect( Surf* surfPtr, CfdMeshMgrSingleton *MeshMgr );
     void IntersectLineSeg( vec3d & p0, vec3d & p1, vector< double > & t_vals );
     void IntersectLineSegMesh( vec3d & p0, vec3d & p1, vector< double > & t_vals );
 
-    bool BorderCurveOnSurface( Surf* surfPtr );
-    void PlaneBorderCurveIntersect( Surf* surfPtr, SCurve* brdPtr );
+    bool BorderCurveOnSurface( Surf* surfPtr, CfdMeshMgrSingleton *MeshMgr );
+    void PlaneBorderCurveIntersect( Surf* surfPtr, SCurve* brdPtr, CfdMeshMgrSingleton *MeshMgr );
 
     BndBox& GetBBox()
     {
@@ -233,6 +243,10 @@ public:
     {
         m_BaseTag = tag;
     }
+    int GetBaseTag()
+    {
+        return m_BaseTag;
+    }
 
     void Subtag( bool tag_subs );
 
@@ -264,7 +278,7 @@ protected:
 
     vector< SCurve* > m_SCurveVec;
 
-    GridDensity* m_GridDensityPtr;
+    SimpleGridDensity* m_GridDensityPtr;
 
     Mesh m_Mesh;
 
@@ -274,6 +288,8 @@ protected:
     bool m_ScaleUFlag;
     vector< double > m_UScaleMap;
     vector< double > m_WScaleMap;
+
+    int m_FeaPartIndex;
 
 };
 

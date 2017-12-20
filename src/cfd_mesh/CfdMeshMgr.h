@@ -65,6 +65,9 @@
 #include "BezierCurve.h"
 #include "Vehicle.h"
 #include "CfdMeshSettings.h"
+#include "StructSettings.h"
+#include "SimpleSubSurface.h"
+#include "SimpleMeshSettings.h"
 
 #include "Vec2d.h"
 #include "Vec3d.h"
@@ -184,15 +187,20 @@ public:
 
     virtual void GenerateMesh();
 
-    virtual void addOutputText( const string &str, int output_type = CFD_OUTPUT );
+    virtual void TransferMeshSettings();
+
+    virtual void TransferSubSurfData();
+    virtual vector < SimpleSubSurface > GetSimpSubSurfs( string geom_id, int surfnum, int comp_id );
+
+    virtual void addOutputText( const string &str, int output_type = VOCAL_OUTPUT );
 
     virtual void GUI_Val( string name, double val );
     virtual void GUI_Val( string name, int val );
     virtual void GUI_Val( string name, string val );
 
-    virtual GridDensity* GetGridDensityPtr()
+    virtual SimpleGridDensity* GetGridDensityPtr()
     {
-        return m_Vehicle->GetCfdGridDensityPtr();
+        return &m_CfdGridDensity;
     }
 
     virtual string GetCurrSourceGeomID()
@@ -237,6 +245,8 @@ public:
 //  virtual void Draw_BBox( BndBox box );
     virtual void LoadDrawObjs( vector< DrawObj* > & draw_obj_vec );
 
+    virtual void UpdateDisplaySettings();
+
     virtual void FetchSurfs( vector< XferSurf > &xfersurfs );
     virtual void LoadSurfs( vector< XferSurf > &xfersurfs );
 
@@ -262,7 +272,7 @@ public:
     virtual void DeleteDuplicateSurfs();
     virtual void BuildGrid();
 
-    enum { NO_OUTPUT, CFD_OUTPUT, FEA_OUTPUT, };
+    enum { QUIET_OUTPUT, VOCAL_OUTPUT, };
     virtual void Remesh( int output_type );
     virtual void RemeshSingleComp( int comp_id, int output_type );
 
@@ -308,6 +318,8 @@ public:
     virtual void BuildSubSurfIntChains();
     virtual void BuildTestIntChains();
     virtual void SubTagTris();
+    virtual void SetSimpSubSurfTags( int tag_offset );
+    virtual void Subtag( Surf* surf );
 
     virtual void HighlightNextChain();
 
@@ -324,6 +336,10 @@ public:
 
     void AddPossCoPlanarSurf( Surf* surfA, Surf* surfB );
     vector< Surf* > GetPossCoPlanarSurfs( Surf* surfPtr );
+
+    virtual void MergeFeaPartSSEdgeOverlap()    {}; // Only for FeaMesh; do nothing for CfdMesh
+    virtual void CheckFixPointIntersects()    {}; // Only for FeaMesh; do nothing for CfdMesh
+    virtual void SetFixPointBorderNodes()    {}; // Only for FeaMesh; do nothing for CfdMesh
 
     void TestStuff();
     vector< vec3d > debugPnts;
@@ -349,10 +365,17 @@ public:
 
     stringstream m_OutStream;
 
-
-    CfdMeshSettings* GetCfdSettingsPtr()
+    virtual SimpleFeaMeshSettings* GetStructSettingsPtr()
     {
-        return m_Vehicle->GetCfdSettingsPtr();
+        return &m_StructSettings;
+    }
+    virtual SimpleCfdMeshSettings* GetCfdSettingsPtr()
+    {
+        return &m_CfdSettings;
+    }
+    virtual SimpleMeshCommonSettings* GetSettingsPtr()
+    {
+        return (SimpleMeshCommonSettings* )&m_CfdSettings;
     }
 
     bool GetMeshInProgress()
@@ -381,6 +404,7 @@ protected:
     string m_WakeGeomID;
 
     vector< Surf* > m_SurfVec;
+    vector < SimpleSubSurface > m_SimpleSubSurfaceVec;
 
     //==== Wakes ====//
     WakeMgr m_WakeMgr;
@@ -405,6 +429,10 @@ protected:
 
     vector< vector< vec3d > > debugRayIsect;
 
+    SimpleFeaMeshSettings m_StructSettings;
+    SimpleCfdMeshSettings m_CfdSettings;
+    SimpleGridDensity m_FeaGridDensity;
+    SimpleCfdGridDensity m_CfdGridDensity;
 
     //==== Vector of Surfs that may have a border that lies on Surf A ====//
     map< Surf*, vector< Surf* > > m_PossCoPlanarSurfMap;

@@ -823,7 +823,8 @@ void PropGeom::UpdateSurf()
         u_pseudo[i] = ( r - rfirst ) / ( rlast - rfirst );
     }
 
-    m_MainSurfVec.resize( m_Nblade() );
+    m_MainSurfVec.resize( 1 );
+    m_MainSurfVec.reserve( m_Nblade() );
 
     m_MainSurfVec[0].SetMagicVParm( false );
     m_MainSurfVec[0].SkinCubicSpline( rib_vec, u_pseudo, tdisc, false );
@@ -831,6 +832,7 @@ void PropGeom::UpdateSurf()
     m_MainSurfVec[0].SetMagicVParm( true );
     m_MainSurfVec[0].SetSurfType( PROP_SURF );
     m_MainSurfVec[0].SetClustering( m_LECluster(), m_TECluster() );
+    m_MainSurfVec[0].SetFoilSurf( &m_FoilSurf );
 
     if ( m_XSecSurf.GetFlipUD() )
     {
@@ -842,6 +844,17 @@ void PropGeom::UpdateSurf()
         m_MainSurfVec[0].FlipNormal();
     }
 
+    // UpdateEndCaps here so we only have to cap one blade.
+    UpdateEndCaps();
+
+    m_MainSurfVec.resize( m_Nblade(), m_MainSurfVec[0] );
+
+    // Duplicate capping variables
+    m_CapUMinSuccess.resize( m_Nblade(), m_CapUMinSuccess[0] );
+    m_CapUMaxSuccess.resize( m_Nblade(), m_CapUMaxSuccess[0] );
+    m_CapWMinSuccess.resize( m_Nblade(), m_CapWMinSuccess[0] );
+    m_CapWMaxSuccess.resize( m_Nblade(), m_CapWMaxSuccess[0] );
+
     Matrix4d rot;
     for ( int i = 1; i < m_Nblade(); i++ )
     {
@@ -849,7 +862,6 @@ void PropGeom::UpdateSurf()
         rot.loadIdentity();
         rot.rotateX( theta );
 
-        m_MainSurfVec[i] = m_MainSurfVec[0];
         m_MainSurfVec[i].Transform( rot );
     }
 

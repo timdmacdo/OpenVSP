@@ -22,6 +22,7 @@
 
 #include "Vec3d.h"
 #include "XmlUtil.h"
+#include "main.h"
 
 #include <assert.h>
 #include <string>
@@ -79,6 +80,8 @@ public:
     CScriptArray* GetProxyIntArray();
     CScriptArray* GetProxyDoubleArray();
 
+    void FillDoubleArray( vector < double > & in, CScriptArray* out );
+
     //==== Common Types =====//
     asITypeInfo* m_IntArrayType;
     asITypeInfo* m_DoubleArrayType;
@@ -95,6 +98,7 @@ public:
     double Deg2Rad( double d )                      { return d*DEG_2_RAD; }
     double Min( double x, double y )                { return  (x < y ) ? x : y; }
     double Max( double x, double y )                { return  (x > y ) ? x : y; }
+    string GetVSPVersion()                          { return VSPVERSION4; }
 
 private:
 
@@ -129,6 +133,10 @@ private:
     CScriptArray* FindGeoms();
     CScriptArray* FindGeomsWithName( const string & name );
     CScriptArray* GetGeomParmIDs( const string & geom_id );
+    CScriptArray* GetSubSurfIDVec( const string & geom_id );
+    CScriptArray* GetAllSubSurfIDs();
+    CScriptArray* GetSubSurf( const string & geom_id, const string & name );
+    CScriptArray* GetSubSurfParmIDs( const string & sub_id );
     CScriptArray* GetXSecParmIDs( const string & xsec_id );
     CScriptArray* ReadFileXSec( const string& xsec_id, const string& file_name );
     CScriptArray* GetAirfoilUpperPnts( const string& xsec_id );
@@ -161,6 +169,14 @@ private:
     void SetXSecPnts( const string& xsec_id, CScriptArray* pnt_arr );
     void SetAirfoilPnts( const string& xsec_id, CScriptArray* up_pnt_arr, CScriptArray* low_pnt_arr );
     void SetVec3dArray( CScriptArray* arr );
+
+    void WriteSeligAirfoilFile( const string& airfoil_name, CScriptArray* ordered_airfoil_pnts );
+
+    CScriptArray* GetHersheyBarLiftDist( const int npts, const double alpha, const double Vinf, const double span, bool full_span_flag = false );
+    CScriptArray* GetVKTAirfoilPnts( const int npts, const double alpha, const double epsilon, const double kappa, const double tau );
+    CScriptArray* GetVKTAirfoilCpDist( const double alpha, const double epsilon, const double kappa, const double tau, CScriptArray* xyz_data );
+    CScriptArray* GetEllipsoidSurfPnts( const vec3d& center, const vec3d& abc_rad, int u_npts = 20, int w_npts = 20 );
+    CScriptArray* GetEllipsoidCpDist( CScriptArray* surf_pnt_vec, const vec3d& abc_rad, const vec3d& V_inf );
 
     void SetUpperCST( const string& xsec_id, int deg, CScriptArray* coefs );
     void SetLowerCST( const string& xsec_id, int deg, CScriptArray* coefs );
@@ -197,6 +213,17 @@ private:
     // ==== Parasite Drag Tool Functions ====//
     void AddExcrescence(const std::string & excresName, int excresType, double excresVal);
     void DeleteExcrescence(int index);
+
+    //=== Register Measure Functions ===//
+    CScriptArray* GetAllRulers();
+    CScriptArray* GetAllProbes();
+
+    CScriptArray* CompVecPnt01(const string &geom_id, const int &surf_indx, CScriptArray* us, CScriptArray* ws);
+    CScriptArray* CompVecNorm01(const string &geom_id, const int &surf_indx, CScriptArray* us, CScriptArray* ws);
+    void CompVecCurvature01(const string &geom_id, const int &surf_indx, CScriptArray* us, CScriptArray* ws, CScriptArray* k1s, CScriptArray* k2s, CScriptArray* kas, CScriptArray* kgs);
+    void ProjVecPnt01(const string &geom_id, int &surf_indx, CScriptArray* pts, CScriptArray* us, CScriptArray* ws, CScriptArray* ds );
+    void ProjVecPnt01Guess(const string &geom_id, int &surf_indx, CScriptArray* pts, CScriptArray* u0s, CScriptArray* w0s, CScriptArray* us, CScriptArray* ws, CScriptArray* ds );
+    void GetUWTess01(const string &geom_id, int &surf_indx, CScriptArray* us, CScriptArray* ws );
 
 };
 

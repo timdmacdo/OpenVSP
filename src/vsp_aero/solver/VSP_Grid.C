@@ -46,9 +46,9 @@ void VSP_GRID::init(void)
     
     KuttaNode_ = NULL;
     
-    WingSurface_ = NULL;
+    WingSurfaceForKuttaNode_ = NULL;
     
-    WingSurfaceIsPeriodic_ = NULL;   
+    WingSurfaceForKuttaNodeIsPeriodic_ = NULL;   
     
     Verbose_ = 0;
 
@@ -137,13 +137,13 @@ void VSP_GRID::SizeKuttaNodeList(int NumberOfKuttaNodes)
 
     KuttaNode_ = new int[NumberOfKuttaNodes_ + 1];
     
-    WingSurface_ = new int[NumberOfKuttaNodes_ + 1];
+    WingSurfaceForKuttaNode_ = new int[NumberOfKuttaNodes_ + 1];
     
-    WingSurfaceIsPeriodic_ = new int[NumberOfKuttaNodes_ + 1];
+    WingSurfaceForKuttaNodeIsPeriodic_ = new int[NumberOfKuttaNodes_ + 1];
     
     zero_int_array(KuttaNode_ ,NumberOfKuttaNodes_);
-    zero_int_array(WingSurface_ ,NumberOfKuttaNodes_);
-    zero_int_array(WingSurfaceIsPeriodic_ ,NumberOfKuttaNodes_);
+    zero_int_array(WingSurfaceForKuttaNode_ ,NumberOfKuttaNodes_);
+    zero_int_array(WingSurfaceForKuttaNodeIsPeriodic_ ,NumberOfKuttaNodes_);
     
     WakeTrailingEdgeX_ = new double[NumberOfKuttaNodes_ + 1];
     WakeTrailingEdgeY_ = new double[NumberOfKuttaNodes_ + 1];
@@ -721,7 +721,21 @@ void VSP_GRID::CreateTriEdges(void)
        EdgeList(j).Length() = sqrt( pow(x2-x1,2.) + pow(y2-y1,2.) + pow(z2-z1,2.) );    
        
     }
+    
+    // Store airfoil information on leading edges
 
+    for ( i = 1 ; i <= NumberOfEdges() ; i++ ) {
+       
+       if ( EdgeList(i).IsLeadingEdge() ) {
+
+          EdgeList(i).ThicknessToChord()       = TriList(EdgeList(i).Tri1()).ThicknessToChord();
+          EdgeList(i).LocationOfMaxThickness() = TriList(EdgeList(i).Tri1()).LocationOfMaxThickness();
+          EdgeList(i).RadiusToChord()          = TriList(EdgeList(i).Tri1()).RadiusToChord();      
+          
+       }
+       
+    }
+         
 }
 
 /*##############################################################################

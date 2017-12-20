@@ -63,7 +63,13 @@ private:
     double **VortexEdgeVelocity_;
     
     double FreeStreamVelocity_[3];
+    
+    double LocalVelocityAtTrailingEdge_[3];
 
+    // Turn off KT correction
+    
+    static int NoKarmanTsienCorrection_;
+    
     // Mach number
     
     static double Mach_;
@@ -103,6 +109,10 @@ private:
     // Test stuff
     
     double EvaluatedLength_;
+    
+    // Ground effects
+    
+    int DoGroundEffectsAnalysis_;
     
 public:
 
@@ -198,12 +208,22 @@ public:
     
     double &FreeStreamVelocity(int i) { return FreeStreamVelocity_[i];};
     
+    double &LocalVelocityAtTrailingEdge(int i) { return LocalVelocityAtTrailingEdge_[i]; };
+    
     double *VortexEdgeVelocity(int i) { return VortexEdgeVelocity_[i]; };
     
-    void UpdateLocation(void);     
+    double UpdateLocation(void);     
     
     void ConvectWakeVorticity(int ConvectType);
     void ConvectWakeVorticityOld(int ConvectType);
+    
+    // Ground effects analysis flag
+    
+    int &DoGroundEffectsAnalysis(void) { return DoGroundEffectsAnalysis_; };
+    
+    // KT analysis flag
+    
+    int &NoKarmanTsienCorrection(void) { return NoKarmanTsienCorrection_; };
     
     // Unsteady analysis
     

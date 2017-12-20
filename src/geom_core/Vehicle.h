@@ -17,7 +17,6 @@
 #include "Geom.h"
 #include "MessageMgr.h"
 #include "DrawObj.h"
-#include "LabelMgr.h"
 #include "LightMgr.h"
 #include "DegenGeom.h"
 #include "CfdMeshSettings.h"
@@ -48,14 +47,6 @@ class VehicleGuiDraw
 {
 public:
     /*!
-    * Get Labels pointer.
-    */
-    static LabelMgr * getLabelMgr()
-    {
-        return LabelMgr::getInstance();
-    }
-
-    /*!
     * Get Lights pointer.
     */
     static LightMgr * getLightMgr()
@@ -80,6 +71,7 @@ public:
     void UnDo();
 
     void Update( bool fullupdate = true );
+    void UpdateGeom( const string &geom_id );
     void ForceUpdate();
     void UpdateGui();
     void RunScript( const string & file_name, const string & function_name = "void main()" );
@@ -172,6 +164,7 @@ public:
     string GetHomePath()                                    { return m_HomePath; }
     string GetVSPAEROCmd()                                  { return m_VSPAEROCmd; }
     string GetVIEWERCmd()                                   { return m_VIEWERCmd; }
+    string GetSLICERCmd()                                   { return m_SLICERCmd; }
 
     //==== Get Script Dir to Write Scripts ====//
     string GetWriteScriptDir()                              { return m_CustomScriptDirs[0]; }
@@ -200,6 +193,10 @@ public:
     void WritePovRayFile( const string & file_name, int write_set );
     void WriteSTEPFile( const string & file_name, int write_set );
     void WriteIGESFile( const string & file_name, int write_set );
+    void WriteIGESFile( const string & file_name, int write_set, int lenUnit, bool splitSubSurfs, bool splitSurfs,
+                        bool toCubic, double toCubicTol, bool trimTE, bool labelID, bool labelName,
+                        bool labelSurfNo, bool labelSplitNo, int delimType );
+
     void WriteBEMFile( const string & file_name, int write_set );
     void WriteDXFFile( const string & file_name, int write_set );
     void WriteSVGFile( const string & file_name, int write_set );
@@ -253,6 +250,12 @@ public:
     string WriteDegenGeomFile();
     void ClearDegenGeom()   { m_DegenGeomVec.clear(); }
 
+    //==== Surface Query ====//
+    vec3d CompPnt01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w);
+    vec3d CompNorm01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w);
+    void CompCurvature01(const std::string &geom_id, const int &surf_indx, const double &u, const double &w, double &k1, double &k2, double &ka, double &kg);
+    double ProjPnt01I(const std::string &geom_id, const vec3d & pt, int &surf_indx, double &u, double &w);
+
     CfdMeshSettings* GetCfdSettingsPtr()
     {
         return &m_CfdSettings;
@@ -261,11 +264,6 @@ public:
     virtual GridDensity* GetCfdGridDensityPtr()
     {
         return &m_CfdGridDensity;
-    }
-
-    virtual GridDensity* GetFeaGridDensityPtr()
-    {
-        return &m_FeaGridDensity;
     }
 
     ClippingMgr* GetClippinMgrPtr()
@@ -314,6 +312,12 @@ public:
     Parm m_IGESToCubicTol;
     BoolParm m_IGESTrimTE;
 
+    BoolParm m_IGESLabelID;
+    BoolParm m_IGESLabelName;
+    BoolParm m_IGESLabelSurfNo;
+    BoolParm m_IGESLabelSplitNo;
+    IntParm m_IGESLabelDelim;
+
     //==== DXF Export ====//
     IntParm m_DXFLenUnit;
     BoolParm m_DXFProjectionFlag;
@@ -359,6 +363,11 @@ public:
     BoolParm m_exportDegenGeomMFile;
 
     Parm m_AxisLength;
+    Parm m_TextSize;
+    IntParm m_MeasureLenUnit;
+
+
+    IntParm m_StructUnit;
 
 protected:
 
@@ -395,12 +404,12 @@ protected:
     string m_HomePath;
     string m_VSPAEROCmd;
     string m_VIEWERCmd;
+    string m_SLICERCmd;
     vector< string > m_CustomScriptDirs;
 
 
     CfdMeshSettings m_CfdSettings;
     CfdGridDensity m_CfdGridDensity;
-    FeaGridDensity m_FeaGridDensity;
 
     ClippingMgr m_ClippingMgr;
     SnapTo m_SnapTo;

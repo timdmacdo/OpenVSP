@@ -392,6 +392,7 @@ GeomXForm::~GeomXForm()
 //==== Update ====//
 void GeomXForm::Update( bool fullupdate )
 {
+    DeactivateXForms();
     ComposeModelMatrix();
 
     double axlen = 1.0;
@@ -853,13 +854,13 @@ Geom::Geom( Vehicle* vehicle_ptr ) : GeomXForm( vehicle_ptr )
     m_Q.Init("Q", "ParasiteDragProps", this, 1, 0, 3 );
     m_Q.SetDescript( "Interference Factor" );
 
-    m_Roughness.Init("Roughness", "ParasiteDragProps", this, -1, -1, 10 );
+    m_Roughness.Init("Roughness", "ParasiteDragProps", this, 0.0, 0, 1e3 );
     m_Roughness.SetDescript( "Roughness Height" );
 
-    m_TeTwRatio.Init("TeTwRatio", "ParasiteDragProps", this, -1, -1, 1e6 );
+    m_TeTwRatio.Init("TeTwRatio", "ParasiteDragProps", this, 1, -1, 1e6 );
     m_TeTwRatio.SetDescript("Temperature Ratio of Freestream to Wall" );
 
-    m_TawTwRatio.Init("TawTwRatio", "ParasiteDragProps", this, -1, -1, 1e6 );
+    m_TawTwRatio.Init("TawTwRatio", "ParasiteDragProps", this, 1, -1, 1e6 );
     m_TawTwRatio.SetDescript("Temperature Ratio of Ambient Wall to Wall" );
 
     m_GroupedAncestorGen.Init("IncorporatedGen", "ParasiteDragProps", this, 0, 0, 100);
@@ -867,6 +868,8 @@ Geom::Geom( Vehicle* vehicle_ptr ) : GeomXForm( vehicle_ptr )
 
     m_ExpandedListFlag.Init("ExpandedList", "ParasiteDragProps", this, false, false, true);
     m_ExpandedListFlag.SetDescript("Flag to determine whether or not this geom has a collapsed list in parasite drag");
+
+    m_FeaStructCount = 0;
 }
 //==== Destructor ====//
 Geom::~Geom()
@@ -877,6 +880,14 @@ Geom::~Geom()
         delete m_SubSurfVec[i];
     }
     m_SubSurfVec.clear();
+
+    // Delete FeaStructures
+    for ( int i = 0; i < (int)m_FeaStructVec.size(); i++ )
+    {
+        delete m_FeaStructVec[i];
+    }
+
+    m_FeaStructVec.clear();
 }
 
 //==== Set Set Flag ====//
@@ -963,6 +974,8 @@ void Geom::Update( bool fullupdate )
 
     m_LateUpdateFlag = false;
 
+    m_CappingDone = false;
+
     Scale();
 
     UpdateSets();
@@ -988,6 +1001,11 @@ void Geom::Update( bool fullupdate )
         {
             m_SubSurfVec[i]->Update();
         }
+
+        for ( int i = 0; i < (int)m_FeaStructVec.size(); i++ )
+        {
+            m_FeaStructVec[i]->Update();
+        }
     }
 
     UpdateChildren( fullupdate );
@@ -1000,6 +1018,30 @@ void Geom::Update( bool fullupdate )
 
     m_UpdatedParmVec.clear();
     m_UpdateBlock = false;
+}
+
+void Geom::GetUWTess01( int indx, vector < double > &u, vector < double > &w )
+{
+    vector< vector< vec3d > > pnts;
+    vector< vector< vec3d > > norms;
+    vector< vector< vec3d > > uw_pnts;
+
+    UpdateTesselate( indx, pnts, norms, uw_pnts, false );
+
+    double umx = GetSurfPtr( indx )->GetUMax();
+    double wmx = GetSurfPtr( indx )->GetWMax();
+
+    u.resize( uw_pnts.size() );
+    for ( int i = 0; i < uw_pnts.size(); i++ )
+    {
+        u[i] = uw_pnts[i][0].x() / umx;
+    }
+
+    w.resize( uw_pnts[0].size() );
+    for ( int j = 0; j < uw_pnts[0].size(); j++ )
+    {
+        w[j] = uw_pnts[0][j].y() / wmx;
+    }
 }
 
 void Geom::UpdateTesselate( int indx, vector< vector< vec3d > > &pnts, vector< vector< vec3d > > &norms,
@@ -1128,6 +1170,12 @@ void Geom::CalcTexCoords( int indx, vector< vector< vector< double > > > &utex, 
 
 void Geom::UpdateEndCaps()
 {
+    if ( m_CappingDone )
+    {
+        return;
+    }
+    m_CappingDone = true;
+
     int nmain = m_MainSurfVec.size();
     m_CapUMinSuccess.resize( nmain );
     m_CapUMaxSuccess.resize( nmain );
@@ -1332,11 +1380,20 @@ void Geom::UpdateSymmAttach()
         }
     }
 
-    //==== Apply Transformations ====//
+    Matrix4d retrun_relTrans = relTrans;
+    retrun_relTrans.affineInverse();
+
+    m_FeaTransMatVec.clear();
+    m_FeaTransMatVec.resize( num_surf );
+
+    //==== Save Transformation Matrix and Apply Transformations ====//
     for ( int i = 0 ; i < num_surf ; i++ )
     {
         transMats[i].postMult( symmOriginMat.data() );
         m_SurfVec[i].Transform( transMats[i] ); // Apply total transformation to main surfaces
+
+        m_FeaTransMatVec[i] = transMats[i];
+        m_FeaTransMatVec[i].matMult( retrun_relTrans.data() ); // m_FeaTransMatVec does not inclde the relTrans matrix
     }
 }
 
@@ -1912,6 +1969,8 @@ void Geom::UpdateDrawObj()
     m_FeatureDrawObj_vec.clear();
     m_FeatureDrawObj_vec.resize(1);
     m_FeatureDrawObj_vec[0].m_GeomChanged = true;
+    m_FeatureDrawObj_vec[0].m_LineWidth = 1.0;
+    m_FeatureDrawObj_vec[0].m_LineColor = vec3d( 0.0, 0.0, 0.0 );
 
     double tol = 1e-2;
 
@@ -2009,14 +2068,14 @@ void Geom::UpdateDegenDrawObj()
 {
     //=== DegenGeom ===//
     vector< DegenGeom > DegenGeomVec; // Vector of geom in degenerate representation
-    CreateDegenGeomPreview( DegenGeomVec );
+    CreateDegenGeom( DegenGeomVec, true );
 
     m_DegenSurfDrawObj_vec.clear();
     m_DegenPlateDrawObj_vec.clear();
     m_DegenCamberPlateDrawObj_vec.clear();
     m_DegenSubSurfDrawObj_vec.clear();
 
-    for ( int i = 0; i < (int)m_SurfVec.size(); i++ )
+    for ( int i = 0; i < (int)DegenGeomVec.size(); i++ )
     {
         //=== Degen Surface ===//
         DegenSurface degen_surf = DegenGeomVec[i].getDegenSurf();
@@ -2139,7 +2198,10 @@ void Geom::UpdateDegenDrawObj()
                     vec3d camber_draw_norm = cross( v, u );
                     camber_draw_norm.normalize();
 
-                    if ( m_SurfVec[i].GetFlipNormal() )
+                    vec3d approx_norm = 0.25 * ( norm1 + norm2 + norm3 + norm4 );
+                    approx_norm.normalize();
+
+                    if ( dot( camber_draw_norm, approx_norm ) < 0.0 )
                     {
                         camber_draw_norm = -1 * camber_draw_norm;
                     }
@@ -2354,6 +2416,15 @@ xmlNodePtr Geom::EncodeXml( xmlNodePtr & node )
                 }
             }
         }
+
+        xmlNodePtr structvecnode = xmlNewChild( geom_node, NULL, BAD_CAST"FeaStructures", NULL );
+        if ( structvecnode )
+        {
+            for ( int i = 0; i < m_FeaStructVec.size(); i++ )
+            {
+                m_FeaStructVec[i]->EncodeXml( structvecnode );
+            }
+        }
     }
     return geom_node;
 
@@ -2416,6 +2487,46 @@ xmlNodePtr Geom::DecodeXml( xmlNodePtr & node )
                         if ( ssurf )
                         {
                             ssurf->DecodeXml( ss_node );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Decode FeaStructures
+        xmlNodePtr structvecnode = XmlUtil::GetNode( geom_node, "FeaStructures", 0 );
+        if ( structvecnode )
+        {
+            int num = XmlUtil::GetNumNames( structvecnode, "FeaStructureInfo" );
+
+            for ( int i = 0; i < num; i++ )
+            {
+                xmlNodePtr structnode = XmlUtil::GetNode( structvecnode, "FeaStructureInfo", i );
+
+                if ( structnode )
+                {
+                    int surf_index = XmlUtil::FindInt( structnode, "MainSurfIndx", 0 );
+
+                    // Provide a new structure to decode to. Do not initialize the skin because it will be decoded
+                    FeaStructure* feastruct = AddFeaStruct( false, surf_index );
+
+                    if ( feastruct )
+                    {
+                        string name = XmlUtil::FindString( structnode, "StructureName", string() );
+                        feastruct->SetFeaStructName( name );
+                        feastruct->DecodeXml( structnode );
+
+                        xmlNodePtr setting_node = XmlUtil::GetNode( structnode, "StructSettings", 0 );
+                        if ( setting_node )
+                        {
+                            feastruct->GetStructSettingsPtr()->DecodeXml( structnode );
+                            feastruct->GetStructSettingsPtr()->ResetExportFileNames( name );
+                        }
+
+                        xmlNodePtr dense_node = XmlUtil::GetNode( structnode, "FEAGridDensity", 0 );
+                        if ( dense_node )
+                        {
+                            feastruct->GetFeaGridDensityPtr()->DecodeXml( structnode );
                         }
                     }
                 }
@@ -2719,46 +2830,43 @@ void Geom::ResetGeomChangedFlag()
     }
 }
 
-//==== Load All Draw Objects ====//
-void Geom::LoadDrawObjs( vector< DrawObj* > & draw_obj_vec )
+void Geom::LoadMainDrawObjs( vector< DrawObj* > & draw_obj_vec )
 {
     char str[256];
 
-    if ( m_GuiDraw.GetDisplayType() == GeomGuiDraw::DISPLAY_BEZIER )
+    for ( int i = 0; i < (int)m_WireShadeDrawObj_vec.size(); i++ )
     {
-        for ( int i = 0; i < (int)m_WireShadeDrawObj_vec.size(); i++ )
+        // Symmetry drawObjs have same m_ID. Make them unique by adding index
+        // at the end of m_ID.
+        sprintf( str, "_%d", i );
+        m_WireShadeDrawObj_vec[i].m_GeomID = m_ID + str;
+        m_WireShadeDrawObj_vec[i].m_Visible = !m_GuiDraw.GetNoShowFlag();
+
+        // Set Render Destination to Main VSP Window.
+        m_WireShadeDrawObj_vec[i].m_Screen = DrawObj::VSP_MAIN_SCREEN;
+
+        Material * material = m_GuiDraw.getMaterial();
+
+        for ( int j = 0; j < 4; j++ )
+            m_WireShadeDrawObj_vec[i].m_MaterialInfo.Ambient[j] = (float)material->m_Ambi[j];
+
+        for ( int j = 0; j < 4; j++ )
+            m_WireShadeDrawObj_vec[i].m_MaterialInfo.Diffuse[j] = (float)material->m_Diff[j];
+
+        for ( int j = 0; j < 4; j++ )
+            m_WireShadeDrawObj_vec[i].m_MaterialInfo.Specular[j] = (float)material->m_Spec[j];
+
+        for ( int j = 0; j < 4; j++ )
+            m_WireShadeDrawObj_vec[i].m_MaterialInfo.Emission[j] = (float)material->m_Emis[j];
+
+        m_WireShadeDrawObj_vec[i].m_MaterialInfo.Shininess = (float)material->m_Shininess;
+
+        vec3d lineColor = vec3d( m_GuiDraw.GetWireColor().x() / 255.0,
+                                 m_GuiDraw.GetWireColor().y() / 255.0,
+                                 m_GuiDraw.GetWireColor().z() / 255.0 );
+
+        switch ( m_GuiDraw.GetDrawType() )
         {
-            // Symmetry drawObjs have same m_ID. Make them unique by adding index
-            // at the end of m_ID.
-            sprintf( str, "_%d", i );
-            m_WireShadeDrawObj_vec[i].m_GeomID = m_ID + str;
-            m_WireShadeDrawObj_vec[i].m_Visible = !m_GuiDraw.GetNoShowFlag();
-
-            // Set Render Destination to Main VSP Window.
-            m_WireShadeDrawObj_vec[i].m_Screen = DrawObj::VSP_MAIN_SCREEN;
-
-            Material * material = m_GuiDraw.getMaterial();
-
-            for ( int j = 0; j < 4; j++ )
-                m_WireShadeDrawObj_vec[i].m_MaterialInfo.Ambient[j] = (float)material->m_Ambi[j];
-
-            for ( int j = 0; j < 4; j++ )
-                m_WireShadeDrawObj_vec[i].m_MaterialInfo.Diffuse[j] = (float)material->m_Diff[j];
-
-            for ( int j = 0; j < 4; j++ )
-                m_WireShadeDrawObj_vec[i].m_MaterialInfo.Specular[j] = (float)material->m_Spec[j];
-
-            for ( int j = 0; j < 4; j++ )
-                m_WireShadeDrawObj_vec[i].m_MaterialInfo.Emission[j] = (float)material->m_Emis[j];
-
-            m_WireShadeDrawObj_vec[i].m_MaterialInfo.Shininess = (float)material->m_Shininess;
-
-            vec3d lineColor = vec3d( m_GuiDraw.GetWireColor().x() / 255.0,
-                m_GuiDraw.GetWireColor().y() / 255.0,
-                m_GuiDraw.GetWireColor().z() / 255.0 );
-
-            switch ( m_GuiDraw.GetDrawType() )
-            {
             case GeomGuiDraw::GEOM_DRAW_WIRE:
                 m_WireShadeDrawObj_vec[i].m_LineWidth = 1.0;
                 m_WireShadeDrawObj_vec[i].m_LineColor = lineColor;
@@ -2805,8 +2913,19 @@ void Geom::LoadDrawObjs( vector< DrawObj* > & draw_obj_vec )
                 }
                 draw_obj_vec.push_back( &m_WireShadeDrawObj_vec[i] );
                 break;
-            }
         }
+    }
+
+}
+
+//==== Load All Draw Objects ====//
+void Geom::LoadDrawObjs( vector< DrawObj* > & draw_obj_vec )
+{
+    char str[256];
+
+    if ( m_GuiDraw.GetDisplayType() == GeomGuiDraw::DISPLAY_BEZIER )
+    {
+        LoadMainDrawObjs( draw_obj_vec );
     }
     else
     {
@@ -2844,8 +2963,6 @@ void Geom::LoadDrawObjs( vector< DrawObj* > & draw_obj_vec )
                 m_FeatureDrawObj_vec[i].m_Screen = DrawObj::VSP_MAIN_SCREEN;
                 sprintf( str, "_%d", i );
                 m_FeatureDrawObj_vec[i].m_GeomID = m_ID + "Feature_" + str;
-                m_FeatureDrawObj_vec[i].m_LineWidth = 1.0;
-                m_FeatureDrawObj_vec[i].m_LineColor = vec3d( 0.0, 0.0, 0.0 );
                 m_FeatureDrawObj_vec[i].m_Type = DrawObj::VSP_LINES;
                 draw_obj_vec.push_back( &m_FeatureDrawObj_vec[i] );
             }
@@ -3098,7 +3215,9 @@ Material * Geom::GetMaterial()
 }
 
 //==== Create Degenerate Geometry ====//
-void Geom::CreateDegenGeom( vector<DegenGeom> &dgs)
+// When preview = true, this simplifies to generate only the
+// required degen plate,surface, and subsurface for updating the preview DrawObj vectors
+void Geom::CreateDegenGeom( vector<DegenGeom> &dgs, bool preview )
 {
     vector< vector< vec3d > > pnts;
     vector< vector< vec3d > > nrms;
@@ -3106,10 +3225,13 @@ void Geom::CreateDegenGeom( vector<DegenGeom> &dgs)
 
     for ( int i = 0 ; i < ( int )m_SurfVec.size() ; i++ )
     {
+        bool urootcap = false;
+
         m_SurfVec[i].ResetUWSkip();
         if ( m_CapUMinSuccess[ m_SurfIndxVec[i] ] )
         {
             m_SurfVec[i].SetUSkipFirst( true );
+            urootcap = true;
         }
         if ( m_CapUMaxSuccess[ m_SurfIndxVec[i] ] )
         {
@@ -3128,127 +3250,84 @@ void Geom::CreateDegenGeom( vector<DegenGeom> &dgs)
         UpdateTesselate( i, pnts, nrms, uwpnts, true );
         m_SurfVec[i].ResetUWSkip();
 
-        DegenGeom degenGeom;
-        degenGeom.setParentGeom( this );
-        degenGeom.setSurfNum( i );
-
-        degenGeom.setNumXSecs( pnts.size() );
-        degenGeom.setNumPnts( pnts[0].size() );
-        degenGeom.setName( GetName() );
-
-        degenGeom.createDegenSurface( pnts, uwpnts, m_SurfVec[i].GetFlipNormal() );
-
-        if( m_SurfVec[i].GetSurfType() == vsp::WING_SURF )
+        int surftype = DegenGeom::BODY_TYPE;
+        if( m_SurfVec[i].GetSurfType() == vsp::WING_SURF || m_SurfVec[i].GetSurfType() == vsp::PROP_SURF )
         {
-            degenGeom.setType(DegenGeom::SURFACE_TYPE);
-
-            degenGeom.createSurfDegenPlate( pnts, uwpnts );
-            degenGeom.createSurfDegenStick( pnts, uwpnts );
+            surftype = DegenGeom::SURFACE_TYPE;
         }
         else if( m_SurfVec[i].GetSurfType() == vsp::DISK_SURF )
         {
-            degenGeom.setType(DegenGeom::DISK_TYPE);
-
-            degenGeom.createDegenDisk( pnts, m_SurfVec[i].GetFlipNormal() );
-        }
-        else
-        {
-            degenGeom.setType(DegenGeom::BODY_TYPE);
-
-            degenGeom.createBodyDegenPlate( pnts, uwpnts );
-            degenGeom.createBodyDegenStick( pnts, uwpnts );
+            surftype = DegenGeom::DISK_TYPE;
         }
 
-        // degenerate subsurfaces
-        for ( int j = 0; j < m_SubSurfVec.size(); j++ )
-        {
-            if ( m_SurfIndxVec[i] == m_SubSurfVec[j]->m_MainSurfIndx() )
-            {
-                degenGeom.addDegenSubSurf( m_SubSurfVec[j], i );    //TODO is there a way to eliminate having to send in the surf index "i"
-
-                SSControlSurf *csurf = dynamic_cast < SSControlSurf* > ( m_SubSurfVec[j] );
-                if ( csurf )
-                {
-                    degenGeom.addDegenHingeLine( csurf );
-                }
-            }
-        }
-
-        dgs.push_back(degenGeom);
+        CreateDegenGeom( dgs, pnts, nrms, uwpnts, urootcap, i, preview, m_SurfVec[i].GetFlipNormal(), surftype, m_SurfVec[i].GetFoilSurf() );
     }
 }
 
-//==== Create Degenerate Geometry Preview ====//
-void Geom::CreateDegenGeomPreview( vector<DegenGeom> &dgs )
+
+void Geom::CreateDegenGeom( vector<DegenGeom> &dgs, const vector< vector< vec3d > > &pnts, const vector< vector< vec3d > > &nrms, const vector< vector< vec3d > > &uwpnts,
+                            bool urootcap, int isurf, bool preview, bool flipnormal, int surftype, VspSurf *fs )
 {
-    // This function is similar to CreateDegenGeom, but has been simplified to generate only the
-    // required degen plate,surface, and subsurface for updating the preview DrawObj vectors
+    DegenGeom degenGeom;
+    degenGeom.setParentGeom( this );
+    degenGeom.setSurfNum( isurf );
 
-    vector< vector< vec3d > > pnts;
-    vector< vector< vec3d > > nrms;
-    vector< vector< vec3d > > uwpnts;
+    degenGeom.setNumXSecs( pnts.size() );
+    degenGeom.setNumPnts( pnts[0].size() );
+    degenGeom.setName( GetName() );
 
-    for ( int i = 0; i < (int)m_SurfVec.size(); i++ )
+    degenGeom.createDegenSurface( pnts, uwpnts, flipnormal );
+
+    if( surftype == DegenGeom::SURFACE_TYPE )
     {
-        m_SurfVec[i].ResetUWSkip();
-        if ( m_CapUMinSuccess[m_SurfIndxVec[i]] )
+        degenGeom.setType(DegenGeom::SURFACE_TYPE);
+
+        degenGeom.createSurfDegenPlate( pnts, uwpnts );
+        if ( !preview )
         {
-            m_SurfVec[i].SetUSkipFirst( true );
+            degenGeom.createSurfDegenStick( pnts, uwpnts, fs, urootcap );
         }
-        if ( m_CapUMaxSuccess[m_SurfIndxVec[i]] )
+    }
+    else if( surftype == DegenGeom::DISK_TYPE )
+    {
+        degenGeom.setType(DegenGeom::DISK_TYPE);
+
+        if ( !preview )
         {
-            m_SurfVec[i].SetUSkipLast( true );
+            degenGeom.createDegenDisk( pnts, flipnormal );
         }
-        if ( m_CapWMinSuccess[m_SurfIndxVec[i]] )
+    }
+    else
+    {
+        degenGeom.setType(DegenGeom::BODY_TYPE);
+
+        degenGeom.createBodyDegenPlate( pnts, uwpnts );
+
+        if ( !preview )
         {
-            m_SurfVec[i].SetWSkipFirst( true );
+            degenGeom.createBodyDegenStick( pnts, uwpnts );
         }
-        if ( m_CapWMaxSuccess[m_SurfIndxVec[i]] )
+    }
+
+    // degenerate subsurfaces
+    for ( int j = 0; j < m_SubSurfVec.size(); j++ )
+    {
+        if ( m_SurfIndxVec[isurf] == m_SubSurfVec[j]->m_MainSurfIndx() )
         {
-            m_SurfVec[i].SetWSkipLast( true );
-        }
+            degenGeom.addDegenSubSurf( m_SubSurfVec[j], isurf );    //TODO is there a way to eliminate having to send in the surf index "i"
 
-        //==== Tesselate Surface ====//
-        UpdateTesselate( i, pnts, nrms, uwpnts, true );
-        m_SurfVec[i].ResetUWSkip();
-
-        DegenGeom degenGeom;
-        degenGeom.setParentGeom( this );
-        degenGeom.setSurfNum( i );
-
-        degenGeom.setNumXSecs( pnts.size() );
-        degenGeom.setNumPnts( pnts[0].size() );
-        degenGeom.setName( GetName() );
-
-        degenGeom.createDegenSurface( pnts, uwpnts, m_SurfVec[i].GetFlipNormal() );
-
-        if ( m_SurfVec[i].GetSurfType() == vsp::WING_SURF )
-        {
-            degenGeom.setType( DegenGeom::SURFACE_TYPE );
-
-            degenGeom.createSurfDegenPlate( pnts, uwpnts );
-        }
-        else if ( m_SurfVec[i].GetSurfType() == vsp::DISK_SURF )
-        {
-            degenGeom.setType( DegenGeom::DISK_TYPE );
-        }
-        else
-        {
-            degenGeom.setType( DegenGeom::BODY_TYPE );
-
-            degenGeom.createBodyDegenPlate( pnts, uwpnts );
-        }
-
-        for ( int j = 0; j < m_SubSurfVec.size(); j++ )
-        {
-            if ( m_SurfIndxVec[i] == m_SubSurfVec[j]->m_MainSurfIndx() )
+            if ( !preview )
             {
-                degenGeom.addDegenSubSurf( m_SubSurfVec[j], i );
+                SSControlSurf *csurf = dynamic_cast < SSControlSurf* > ( m_SubSurfVec[j] );
+                if ( csurf )
+                {
+                    degenGeom.addDegenHingeLine( csurf, isurf );
+                }
             }
         }
-
-        dgs.push_back( degenGeom );
     }
+
+    dgs.push_back(degenGeom);
 }
 
 //==== Set Sym Flag ====//
@@ -3282,6 +3361,11 @@ VspSurf* Geom::GetSurfPtr( int indx )
 int Geom::GetNumTotalSurfs()
 {
     return GetNumSymmCopies() * GetNumMainSurfs();
+}
+
+int Geom::GetNumTotalHrmSurfs()
+{
+    return GetNumTotalSurfs();
 }
 
 //==== Count Number of Sym Copies of Each Surface ====//
@@ -3321,12 +3405,12 @@ int Geom::GetNumSymFlags()
     return numSymFlags;
 }
 
-vec3d Geom::GetUWPt( const double &u, const double &w )
+vec3d Geom::CompPnt01(const double &u, const double &w)
 {
     return GetSurfPtr()->CompPnt01( u, w );
 }
 
-vec3d Geom::GetUWPt( const int &indx, const double &u, const double &w )
+vec3d Geom::CompPnt01(const int &indx, const double &u, const double &w)
 {
     return GetSurfPtr( indx )->CompPnt01( u, w );
 }
@@ -3761,6 +3845,11 @@ void Geom::AddLinkableParms( vector< string > & linkable_parm_vec, const string 
     {
         m_SubSurfVec[i]->AddLinkableParms( linkable_parm_vec, m_ID );
     }
+
+    for ( int i = 0; i < (int)m_FeaStructVec.size(); i++ )
+    {
+        m_FeaStructVec[i]->AddLinkableParms( linkable_parm_vec, m_ID );
+    }
 }
 
 void Geom::ChangeID( string id )
@@ -3900,6 +3989,71 @@ void Geom::RecolorSubSurfs( int active_ind )
     }
 }
 
+//==== Add FeaStructure =====//
+FeaStructure* Geom::AddFeaStruct( bool initskin, int surf_index )
+{
+    FeaStructure* feastruct = NULL;
+
+    if ( m_MainSurfVec.size() <= 0 || surf_index > m_MainSurfVec.size() || surf_index < 0 )
+    {
+        return feastruct;
+    }
+
+    if ( GetType().m_Type != BLANK_GEOM_TYPE && GetType().m_Type != PT_CLOUD_GEOM_TYPE && GetType().m_Type != HINGE_GEOM_TYPE && GetType().m_Type != MESH_GEOM_TYPE )
+    {
+        feastruct = new FeaStructure( GetID(), surf_index );
+
+        if ( feastruct )
+        {
+            string defaultname = m_Name + "_Struct" + to_string( m_FeaStructCount );
+            feastruct->SetFeaStructName( defaultname );
+
+            if ( feastruct->GetStructSettingsPtr() )
+            {
+                feastruct->GetStructSettingsPtr()->ResetExportFileNames( defaultname );
+            }
+
+            if ( initskin )
+            {
+                feastruct->InitFeaSkin();
+            }
+
+            m_FeaStructVec.push_back( feastruct );
+            m_FeaStructCount++;
+        }
+    }
+
+    return feastruct;
+}
+
+FeaStructure* Geom::GetFeaStruct( int fea_struct_ind )
+{
+    if ( ValidGeomFeaStructInd( fea_struct_ind ) )
+    {
+        return m_FeaStructVec[fea_struct_ind];
+    }
+    return NULL;
+}
+
+//==== Delete FeaStructure =====//
+void Geom::DeleteFeaStruct( int index )
+{
+    if ( !ValidGeomFeaStructInd( index ) )
+        return;
+
+    delete m_FeaStructVec[index];
+    m_FeaStructVec.erase( m_FeaStructVec.begin() + index );
+}
+
+bool Geom::ValidGeomFeaStructInd( int index )
+{
+    if ( (int)m_FeaStructVec.size() > 0 && index >= 0 && index < (int)m_FeaStructVec.size() )
+    {
+        return true;
+    }
+    return false;
+}
+
 void Geom::DelAllSources()
 {
     for ( int i = 0 ; i < ( int )m_MainSourceVec.size() ; i++ )
@@ -3969,6 +4123,14 @@ BaseSource* Geom::CreateSource( int type )
     {
         src_ptr = new BoxSource();
     }
+    else if ( type == ULINE_SOURCE )
+    {
+        src_ptr = new ULineSource();
+    }
+    else if ( type == WLINE_SOURCE )
+    {
+        src_ptr = new WLineSource();
+    }
 
     return src_ptr;
 }
@@ -3987,6 +4149,14 @@ BaseSimpleSource* Geom::CreateSimpleSource( int type )
     else if ( type == BOX_SOURCE )
     {
         src_ptr = new BoxSimpleSource();
+    }
+    else if ( type == ULINE_SOURCE )
+    {
+        src_ptr = new ULineSimpleSource();
+    }
+    else if ( type == WLINE_SOURCE )
+    {
+        src_ptr = new WLineSimpleSource();
     }
 
     return src_ptr;
@@ -4133,8 +4303,7 @@ void GeomXSec::LoadDrawObjs( vector< DrawObj* > & draw_obj_vec )
     {
         char str[256];
 
-        int nxsec = m_XSecSurf.NumXSec();
-        for ( int i = 0 ; i < nxsec ; i++ )
+        for ( int i = 0 ; i < m_XSecDrawObj_vec.size() ; i++ )
         {
             sprintf( str, "_%d", i );
 

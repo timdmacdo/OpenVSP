@@ -39,6 +39,9 @@ public:
     void Split( double u );
     void Append( VspCurve & input_crv ); // Append Curve
 
+    void Spin( double u );
+    void Spin01( double u );
+
     bool IsClosed() const;
 
     void RoundJoint( double rad, int i );
@@ -77,14 +80,25 @@ public:
     double FindNearest01( double &u, const vec3d &pt ) const;
     double FindNearest01( double &u, const vec3d &pt, const double &u0 ) const;
 
+    double FindMinimumDimension( double &u, const int &idim, const double &u0 ) const;
+    double FindMinimumDimension( double &u, const int &idim ) const;
+
     //===== Bezier Funcs ====//
-    vec3d CompPnt( double u );
-    vec3d CompTan( double u );
+    vec3d CompPnt( double u ) const;
+    vec3d CompTan( double u ) const;
+    vec3d CompTan( double u, int sideflag ) const;
+    vec3d CompNorm( double u ) const;
+    vec3d CompNorm( double u, int sideflag ) const;
 
-    vec3d CompPnt01( double u );
-    vec3d CompTan01( double u );
+    double CompCurve( double u ) const;
+    double CompCurve( double u, int sideflag ) const;
 
-    double CompLength( double tol = 1e-6 );
+    enum { BEFORE, AFTER };
+
+    vec3d CompPnt01( double u ) const;
+    vec3d CompTan01( double u ) const;
+
+    double CompLength( double tol = 1e-6 ) const;
 
     //===== Tesselate ====//
     void TesselateNoCorner( int num_pnts_u, double umin, double umax, vector< vec3d > & output, vector< double > &uout );
@@ -122,6 +136,10 @@ public:
     bool IsEqual( const VspCurve & crv );
 
     void GetBoundingBox( BndBox &bb ) const;
+
+    double CalculateThick( double &loc ) const;
+
+    double Angle( const double & u1, const int &dir1, const double & u2, const int &dir2, const bool & flipflag ) const;
 
 protected:
     piecewise_curve_type m_Curve;
